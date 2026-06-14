@@ -2,8 +2,8 @@
 Strategy specification for the Minervini-style VCP screener.
 
 This module is the single source of truth for every threshold the screen uses.
-It is deliberately verbose: in a Navigo research context this parameter block
-IS the strategy definition. Changing a number here changes the strategy, and
+It is deliberately verbose: this parameter block IS the strategy definition.
+Changing a number here changes the strategy, and
 every change should be logged in the README changelog with a dated rationale.
 
 No parameter is tuned per name at runtime. The screen is fully rules-based.

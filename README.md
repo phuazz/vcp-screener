@@ -1,8 +1,8 @@
 # VCP Screener — Minervini-style Volatility Contraction Pattern signal
 
 A rules-based screen for Mark Minervini's Volatility Contraction Pattern (VCP),
-sitting on top of his Trend Template prefilter. Built as a Navigo research
-signal. The screen is fully systematic: no parameter is tuned per name at
+sitting on top of his Trend Template prefilter. A personal research signal. The
+screen is fully systematic: no parameter is tuned per name at
 runtime, and the parameter block in `config.py` is the strategy definition.
 
 Status: **working prototype** (data layer, swing detection, Trend Template
