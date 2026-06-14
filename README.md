@@ -5,10 +5,14 @@ sitting on top of his Trend Template prefilter. A personal research signal. The
 screen is fully systematic: no parameter is tuned per name at
 runtime, and the parameter block in `config.py` is the strategy definition.
 
-Status: **working prototype** (data layer, swing detection, Trend Template
-gate, contraction analysis, candidate emission). Validated by synthetic unit
-tests and by-eye diagnostics over a 47-name liquid seed. Not yet a production
-signal — see Roadmap.
+Status: **research complete (technical track).** The screener and an audited,
+out-of-sample-validated backtest are built. The conclusion (see "Key findings")
+is that the mechanical VCP system is a genuine low-drawdown *sleeve* and a useful
+idea-generation screen, but not a standalone index-beater. Adopted use is the
+live screen as a watchlist plus a defensive sleeve; the technical parameter
+search is finished. A genuine return edge would require the structural levers in
+the Roadmap (fundamental overlay, point-in-time data), which are a data project,
+not more tuning.
 
 ## What it does
 
@@ -60,9 +64,10 @@ python scripts/pipeline.py      # build docs/index.html from template + both dat
 ```
 
 The dashboard (`docs/index.html`, published via GitHub Pages) shows the live
-screen, the watchlist, and the backtest visuals — equity curve versus SPY,
-drawdown, calendar-year returns, the R-multiple distribution, an annotated
-example trade, and the full trade list. The nightly Action refreshes the screen;
+screen, the watchlist, and the backtest visuals — equity curve versus the Russell
+1000 (IWB), drawdown, the out-of-sample validation table, calendar-year returns,
+the R-multiple distribution, an annotated example trade, and the full trade list.
+The nightly Action refreshes the screen;
 the backtest changes slowly and is rebuilt occasionally with `run_backtest.py`.
 
 ## Backtest (indicative only)
@@ -74,9 +79,12 @@ so gaps are not assumed away. Rules: enter on a breakout above the pivot; initia
 hard stop at the last contraction low; then hold while the Stage 2 uptrend is
 intact, exiting on a close below the 200-day average (so a multi-month run is one
 trade rather than a string of clipped exits); fixed-fractional risk sizing with a
-portfolio concurrency cap; idle cash earns a conservative yield. Three toggleable
-quality filters — breakout-volume confirmation, RS-ranked entries, and a
-market-regime gate — sit in front. All parameters live in `BacktestConfig` in
+portfolio concurrency cap; idle cash earns a conservative yield. Selection uses
+the same cross-sectional top-decile RS rank and dollar-volume liquidity floor as
+the live screen, plus three toggleable quality filters in front — breakout-volume
+confirmation, RS-ranked entries, and a market-regime gate. Sharpe and Sortino are
+computed in excess of the risk-free rate; metrics are reported for an in-sample
+train window and an untouched holdout. All parameters live in `BacktestConfig` in
 `config.py`.
 
 **It is indicative only.** It runs over the *current* universe on yfinance data,
@@ -89,25 +97,41 @@ numbers as a sanity check on the rules, never as a forward return estimate.
 1000 proxy; drop an official `data/iwb_holdings.csv` to override it with the real
 constituents. The buy-and-hold benchmark is IWB (iShares Russell 1000).
 
-**Key findings (be honest about these), 2017-2026 window:**
+**Key findings (the full research arc, 2017-2026 window).** Every lever was
+tested and the data was allowed to overturn the hypothesis at each step:
 
-- *Selection bias.* The curated 47-name seed looked strong (PF ~2.1, +0.5R). On
-  the broad ~900-name universe the edge largely collapses (PF ~1.2, +0.1R, CAGR
-  ~3%) and drawdown widens to roughly the index's. Much of the seed's apparent
-  edge was selection bias — it was today's leaders.
-- *Period is not the excuse.* Momentum worked superbly this decade: a systematic
-  momentum ETF (MTUM) returned ~17% CAGR, equal-weight (RSP) ~12%, cap-weight
-  (IWB) ~15%. The premium was available; the implementation was not capturing it.
-- *Trade management was the wound.* A 50-day trailing exit churned multi-hundred-
-  percent runs into many small ~+16% trades. Switching to a Stage 2 hold (exit on
-  a close below the 200-day) roughly doubled the result — average win ~+38%,
-  expectancy +0.29R, CAGR ~7% — confirming "let winners run" was the missing
-  discipline.
-- *Still not an index-beater.* Even after the fix, ~7% CAGR trails passive
-  momentum. The remaining gap points to what is genuinely missing: tighter
-  leadership selection, concentration/sizing, and above all the fundamental
-  overlay (Minervini's actual SEPA edge) on point-in-time data. The chart pattern
-  alone is a timing tool, not the source of the edge.
+1. *Selection bias.* The curated 47-name seed looked strong (PF ~2.1, +0.5R). On
+   the broad ~900-name universe the edge collapsed (PF ~1.2, +0.1R, CAGR ~3%,
+   drawdown ~ the index's). Much of the seed's apparent edge was selection bias —
+   it was today's leaders.
+2. *Period is not the excuse.* Momentum worked superbly this decade — MTUM ~17%
+   CAGR, equal-weight (RSP) ~12%, cap-weight (IWB) ~15%. The premium was there;
+   the implementation was not capturing it.
+3. *Trade management was the wound.* A 50-day trailing exit churned multi-hundred-
+   percent runs into many small ~+16% trades. A Stage 2 hold (exit on a close
+   below the 200-day) roughly doubled the result — "let winners run" was the
+   missing discipline.
+4. *Selection is the real lever.* Reconciling to the screen's top-decile RS rank
+   plus a liquidity floor lifted per-trade quality sharply — profit factor 2.61,
+   expectancy +0.70R across 145 trades. A genuine trade-level edge.
+5. *But it is regime-dependent and not an index-beater.* Out-of-sample, the
+   strategy underperformed IWB on return in BOTH windows (train CAGR 2% vs 10%,
+   holdout 17% vs 22%) and was near-flat for the first 5.4 years (train Sharpe
+   0.05). The attractive figures are concentrated in the 2022-2026 bull, and the
+   holdout is itself survivorship-inflated.
+6. *Concentration is over-betting.* Doubling per-trade risk (1.5% / 6 slots)
+   doubled drawdown (-19% -> -37%) for no extra return and a lower Sharpe
+   (0.43 -> 0.38). Variance drag cancels the benefit; the conservative 0.75%/8
+   settings are strictly better. Reverted.
+
+**Conclusion.** VCP-the-pattern is timing, not alpha. Built and audited properly
+the mechanical system is a real low-drawdown sleeve with a genuine trade-level
+selection edge, but long-only at moderate exposure it does not beat a strong
+cap-weighted index, and its returns are regime-dependent. The technical parameter
+search is exhausted. A credible standalone return edge would require the
+structural levers — the fundamental overlay (Minervini's SEPA) and point-in-time
+data — which are a data project, not more tuning. Adopted use: the live screen as
+an idea-generation watchlist, and the strategy as a defensive sleeve if deployed.
 
 ## Known limitations (read before trusting output)
 
@@ -173,4 +197,4 @@ screener/
   backtest.py             # walk-forward portfolio simulation + metrics
 ```
 
-Last updated: 2026-06-14.
+Last updated: 2026-06-15.
