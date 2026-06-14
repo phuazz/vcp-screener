@@ -125,24 +125,24 @@
   <div class="kpis" id="bt-kpis"></div>
   <div class="section-sub" style="margin-top:10px;">The strategy is a <strong>risk-controlled sleeve</strong>:
     each trade risks a fixed fraction of equity, capital sits in cash when no setup qualifies, and idle cash earns a
-    conservative money-market yield. Compare it to SPY on <strong>risk-adjusted</strong> terms (Sharpe, drawdown),
-    not raw return &mdash; its low average exposure caps absolute CAGR by design.</div>
+    conservative money-market yield. Compare it to the Russell 1000 (IWB) on <strong>risk-adjusted</strong> terms
+    (Sharpe, drawdown), not raw return &mdash; its low average exposure caps absolute CAGR by design.</div>
 
-  <h3>Equity curve vs SPY</h3>
-  <div class="section-sub">Growth of the initial stake, strategy versus a fully-invested SPY buy-and-hold over the
-    same window, log scale. The strategy spends most of its time in cash, so it trails SPY in raw terms while taking
-    far less drawdown.</div>
+  <h3>Equity curve vs Russell 1000</h3>
+  <div class="section-sub">Growth of the initial stake, strategy versus a fully-invested Russell 1000 (IWB)
+    buy-and-hold over the same window, log scale. The strategy spends most of its time in cash, so it trails the
+    index in raw terms while taking far less drawdown.</div>
   <div id="equity-chart" class="chart tall"></div>
 
   <h3>Drawdown</h3>
   <div class="section-sub">Underwater plot &mdash; the strategy's distance below its own running high-water mark.
-    The shallow troughs versus SPY's are the point of a stop-disciplined breakout method.</div>
+    The shallow troughs versus the index's are the point of a stop-disciplined breakout method.</div>
   <div id="dd-chart" class="chart short"></div>
 
   <div class="two">
     <div>
       <h3>Calendar-year returns</h3>
-      <div class="section-sub">Strategy versus SPY by year. The first and last years are partial.</div>
+      <div class="section-sub">Strategy versus the Russell 1000 (IWB) by year. The first and last years are partial.</div>
       <div id="annual-chart" class="chart"></div>
     </div>
     <div>
@@ -242,6 +242,7 @@ function renderWatchlist(rows){
 function renderBacktest(b){
   if(!b||!b.kpis){ document.getElementById("bt-window").innerHTML="Backtest data not available."; return; }
   const k=b.kpis, m=b.meta;
+  const BM = m.benchmark || 'Benchmark';
   document.getElementById("bt-window").innerHTML =
     `Window <strong>${m.start} → ${m.end}</strong>, ${m.names_traded} names, ${k.num_trades} trades,
      ${nf(m.initial_equity,0)} starting equity.`;
@@ -251,10 +252,10 @@ function renderBacktest(b){
      commission ${(m.commission*1e4).toFixed(0)}bps/side, trail ${m.trail_ma_len}-day, cash yield ${pf(m.cash_yield_annual,1)}.`;
 
   const K=[
-    ["CAGR", pf(k.cagr), "SPY "+pf(k.spy_cagr), sign(k.cagr)],
-    ["Sharpe", nf(k.sharpe,2), "SPY "+nf(k.spy_sharpe,2), ""],
-    ["Max drawdown", pf(k.max_dd), "SPY "+pf(k.spy_max_dd), "good"],
-    ["Total return", pf(k.total_return,0), "SPY "+pf(k.spy_total_return,0), sign(k.total_return)],
+    ["CAGR", pf(k.cagr), BM+" "+pf(k.bench_cagr), sign(k.cagr)],
+    ["Sharpe", nf(k.sharpe,2), BM+" "+nf(k.bench_sharpe,2), ""],
+    ["Max drawdown", pf(k.max_dd), BM+" "+pf(k.bench_max_dd), ""],
+    ["Total return", pf(k.total_return,0), BM+" "+pf(k.bench_total_return,0), sign(k.total_return)],
     ["Sortino", nf(k.sortino,2), "", ""],
     ["Calmar", nf(k.calmar,2), "", ""],
     ["Win rate", pf(k.win_rate,0), "", ""],
@@ -270,7 +271,7 @@ function renderBacktest(b){
   // Equity curve (log)
   Plotly.newPlot('equity-chart', [
     {x:b.equity.dates, y:b.equity.strategy, name:'VCP strategy', mode:'lines', line:{color:'#1351b4', width:2}},
-    {x:b.equity.dates, y:b.equity.spy, name:'SPY buy & hold', mode:'lines', line:{color:'#9aa0a8', width:1.5}},
+    {x:b.equity.dates, y:b.equity.bench, name:BM+' buy & hold', mode:'lines', line:{color:'#9aa0a8', width:1.5}},
   ], layout({yaxis:{gridcolor:GRID, type:'log', tickprefix:'$'}}), PCONF);
 
   // Drawdown
@@ -282,7 +283,7 @@ function renderBacktest(b){
   // Annual returns
   Plotly.newPlot('annual-chart', [
     {x:b.annual.years, y:b.annual.strategy.map(v=>v===null?null:v*100), name:'Strategy', type:'bar', marker:{color:'#1351b4'}},
-    {x:b.annual.years, y:b.annual.spy.map(v=>v===null?null:v*100), name:'SPY', type:'bar', marker:{color:'#cdd2d8'}},
+    {x:b.annual.years, y:b.annual.bench.map(v=>v===null?null:v*100), name:BM, type:'bar', marker:{color:'#cdd2d8'}},
   ], layout({barmode:'group', hovermode:'closest', yaxis:{gridcolor:GRID, ticksuffix:'%'}}), PCONF);
 
   // R distribution

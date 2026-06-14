@@ -86,3 +86,59 @@ def fetch_many(tickers: list[str], **kwargs) -> dict[str, pd.DataFrame]:
         if not df.empty:
             out[t] = df
     return out
+
+
+def _bulk_cache_path(ticker: str, period: str) -> Path:
+    return CACHE_DIR / f"{ticker}_{period}_1d.parquet"
+
+
+def fetch_bulk(tickers: list[str], period: str, chunk: int = 120,
+               use_cache: bool = True, max_age_hours: float = 18.0) -> dict[str, pd.DataFrame]:
+    """Fetch many tickers efficiently for a given period. Returns ticker -> frame.
+
+    Cached frames (fresh enough) are read from parquet; the remainder are
+    downloaded in threaded chunks via a single yf.download call per chunk, which
+    is far faster than serial fetching for a large universe. Bad or empty
+    tickers are simply dropped rather than aborting the run.
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    out: dict[str, pd.DataFrame] = {}
+    missing: list[str] = []
+
+    for t in tickers:
+        path = _bulk_cache_path(t, period)
+        if use_cache and path.exists():
+            age = (time.time() - path.stat().st_mtime) / 3600.0
+            if age < max_age_hours:
+                try:
+                    out[t] = pd.read_parquet(path)
+                    continue
+                except Exception:
+                    pass
+        missing.append(t)
+
+    for start in range(0, len(missing), chunk):
+        batch = missing[start:start + chunk]
+        try:
+            raw = yf.download(batch, period=period, interval="1d", auto_adjust=True,
+                              progress=False, threads=True, group_by="ticker")
+        except Exception:
+            continue
+        if raw is None or raw.empty:
+            continue
+        for t in batch:
+            try:
+                sub = raw[t] if isinstance(raw.columns, pd.MultiIndex) else raw
+                sub = sub[["Open", "High", "Low", "Close", "Volume"]].dropna()
+            except Exception:
+                continue
+            if sub.empty:
+                continue
+            sub.index.name = "Date"
+            out[t] = sub
+            try:
+                sub.to_parquet(_bulk_cache_path(t, period))
+            except Exception:
+                pass
+
+    return out

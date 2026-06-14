@@ -16,6 +16,15 @@ from __future__ import annotations
 
 import csv
 import io
+import json
+import urllib.request
+from pathlib import Path
+
+_BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Chrome/120 Safari/537.36")
+_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+_PROXY_CACHE = _DATA_DIR / "universe_proxy.json"
+_IWB_OVERRIDE = _DATA_DIR / "iwb_holdings.csv"
 
 # Curated seed: liquid Russell 1000 names spanning leadership themes
 # (semis, software, consumer, industrials, financials, healthcare). Chosen for
@@ -72,11 +81,56 @@ def load_iwb_holdings(csv_text: str) -> list[str]:
     return tickers
 
 
-def get_universe() -> list[str]:
-    """Return the ticker universe for a screen run.
+def load_sp_proxy(refresh: bool = False) -> list[str]:
+    """Russell 1000 proxy: the S&P 500 + S&P 400 constituents (~900 of the
+    largest US names), scraped from Wikipedia and cached to disk.
 
-    Prototype: the seed list. Swap in `load_iwb_holdings` output once the
-    holdings download is wired up and we are ready to run the full Russell
-    1000.
+    This is a proxy, not the exact Russell 1000. The iShares IWB holdings file
+    is the authoritative source, but its download is bot-walled from automated
+    environments; drop an official `data/iwb_holdings.csv` to override this.
+    Membership barely affects an indicative, survivorship-biased backtest, so a
+    well-defined large-cap proxy is an honest stand-in.
     """
+    if not refresh and _PROXY_CACHE.exists():
+        try:
+            return json.loads(_PROXY_CACHE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    import pandas as pd  # local import: only needed when refreshing
+
+    def _wiki(url: str, col: str = "Symbol") -> list[str]:
+        req = urllib.request.Request(url, headers={"User-Agent": _BROWSER_UA})
+        html = urllib.request.urlopen(req, timeout=30).read().decode("utf-8", "replace")
+        table = next(t for t in pd.read_html(io.StringIO(html)) if col in t.columns)
+        return [str(s).strip().upper().replace(".", "-")
+                for s in table[col].tolist() if str(s).strip()]
+
+    tickers = sorted(set(
+        _wiki("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies")
+        + _wiki("https://en.wikipedia.org/wiki/List_of_S%26P_400_companies")
+    ))
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+    _PROXY_CACHE.write_text(json.dumps(tickers), encoding="utf-8")
+    return tickers
+
+
+def get_universe() -> list[str]:
+    """Return the ticker universe for a screen or backtest run.
+
+    Resolution order: an official IWB holdings CSV if present, else the cached
+    or freshly scraped S&P 500 + 400 proxy, else the curated seed as a last
+    resort if both network paths fail.
+    """
+    if _IWB_OVERRIDE.exists():
+        try:
+            return load_iwb_holdings(_IWB_OVERRIDE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    try:
+        proxy = load_sp_proxy()
+        if proxy:
+            return proxy
+    except Exception:
+        pass
     return list(SEED_UNIVERSE)

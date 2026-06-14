@@ -29,7 +29,7 @@ def main() -> None:
     print(f"  trades {k['num_trades']} | win {k['win_rate']:.0%} | "
           f"PF {k['profit_factor']} | expectancy {k['expectancy_r']}R")
     print(f"  CAGR {k['cagr']:.1%} | Sharpe {k['sharpe']} | maxDD {k['max_dd']:.1%} "
-          f"| vs SPY CAGR {k['spy_cagr']:.1%} Sharpe {k['spy_sharpe']}")
+          f"| vs {result['meta']['benchmark']} CAGR {k['bench_cagr']:.1%} Sharpe {k['bench_sharpe']}")
     print(f"  Wrote {OUT}")
 
 

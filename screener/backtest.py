@@ -33,6 +33,7 @@ import yfinance as yf
 from config import CONFIG
 from .vcp import analyse_vcp
 from .swings import detect_swings
+from .data import fetch_bulk
 
 
 # ----------------------------------------------------------------------------
@@ -118,10 +119,11 @@ def run_backtest(universe: list[str]) -> dict:
     bench_close = bench_raw["Close"]
     calendar = bench_raw.index
 
-    # Fetch and prepare every name, aligned to the benchmark calendar.
+    # Bulk-fetch the universe (threaded, cached), then prepare each name
+    # aligned to the benchmark calendar.
+    raw_data = fetch_bulk(universe, bt.history_period)
     prepared: dict[str, pd.DataFrame] = {}
-    for t in universe:
-        raw = _fetch(t, bt.history_period)
+    for t, raw in raw_data.items():
         if len(raw) < vcfg.base_lookback_days + 30:
             continue
         prep = _prepare(raw, bench_close).reindex(calendar)
@@ -325,19 +327,19 @@ def _assemble(universe, prepared, calendar, warmup, eq_dates, eq_vals,
             "profit_factor": f(profit_factor, 2), "expectancy_r": f(expectancy_r, 2),
             "avg_win_pct": f(avg_win, 2), "avg_loss_pct": f(avg_loss, 2),
             "avg_bars": f(avg_bars, 1), "exposure": f(exposure),
-            "spy_cagr": f(bm["cagr"]), "spy_sharpe": f(bm["sharpe"], 2),
-            "spy_total_return": f(bm["total_return"]), "spy_max_dd": f(bm["max_dd"]),
+            "bench_cagr": f(bm["cagr"]), "bench_sharpe": f(bm["sharpe"], 2),
+            "bench_total_return": f(bm["total_return"]), "bench_max_dd": f(bm["max_dd"]),
         },
         "equity": {
             "dates": [str(d.date()) for d in equity.index],
             "strategy": [round(v, 1) for v in equity.tolist()],
-            "spy": [round(v, 1) for v in bench_eq.tolist()],
+            "bench": [round(v, 1) for v in bench_eq.tolist()],
             "drawdown": [round(v, 4) for v in m["dd_series"].tolist()],
         },
         "annual": {
             "years": [str(d.year) for d in yr_strat.index],
             "strategy": [f(v) for v in yr_strat.tolist()],
-            "spy": [f(v) for v in yr_bench.tolist()],
+            "bench": [f(v) for v in yr_bench.tolist()],
         },
         "r_multiples": [t.r_multiple for t in trades if t.r_multiple is not None],
         "trades": [vars(t) | {"entry_date": str(t.entry_date.date()),

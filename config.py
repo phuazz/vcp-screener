@@ -150,7 +150,7 @@ class BacktestConfig:
     """
 
     history_period: str = "10y"          # longer window than the live screen
-    benchmark: str = "SPY"
+    benchmark: str = "IWB"               # iShares Russell 1000 ETF (buy-and-hold)
 
     initial_equity: float = 100_000.0
 

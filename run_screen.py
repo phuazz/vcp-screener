@@ -23,7 +23,7 @@ from pathlib import Path
 import pandas as pd
 
 from config import CONFIG
-from screener.data import fetch_many
+from screener.data import fetch_bulk
 from screener.trend_template import (
     evaluate_trend_template,
     rs_rank_universe,
@@ -46,7 +46,7 @@ def dollar_volume_ok(df: pd.DataFrame) -> tuple[bool, float]:
 def run(use_cache: bool = True, show_all: bool = False) -> dict:
     universe = get_universe()
     print(f"Universe: {len(universe)} names. Fetching ({CONFIG.history_period}) ...")
-    data = fetch_many(universe, use_cache=use_cache)
+    data = fetch_bulk(universe, CONFIG.history_period, use_cache=use_cache)
     print(f"Fetched {len(data)} names with data.\n")
 
     # Pass 1: liquidity + trend template; collect RS scores for ranking.

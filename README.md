@@ -76,11 +76,25 @@ after a short grace period; fixed-fractional risk sizing with a portfolio
 concurrency cap; idle cash earns a conservative yield. All parameters live in
 `BacktestConfig` in `config.py`.
 
-**It is indicative only.** It runs over the *current* seed names on yfinance
-data, so it is survivorship- and selection-biased and flatters the result. The
-three failure modes are stated on the dashboard and in "Three ways this could be
-silently wrong" below. Read the numbers as a sanity check on the rules, never as
-a forward return estimate.
+**It is indicative only.** It runs over the *current* universe on yfinance data,
+so it is survivorship- and selection-biased. The three failure modes are stated
+on the dashboard and in "Three ways this could be silently wrong" below. Read the
+numbers as a sanity check on the rules, never as a forward return estimate.
+
+**Universe and benchmark.** The universe is the S&P 500 + S&P 400 constituents
+(~900 of the largest US names, scraped from Wikipedia and cached) as a Russell
+1000 proxy; drop an official `data/iwb_holdings.csv` to override it with the real
+constituents. The buy-and-hold benchmark is IWB (iShares Russell 1000).
+
+**Key finding (be honest about this).** On the curated 47-name seed the strategy
+looked strong (profit factor ~2.1, +0.5R expectancy). On the broad ~900-name
+universe the edge largely collapses (profit factor ~1.2, +0.1R), exposure rises
+to ~75 per cent, and drawdown widens to roughly the index's. The lesson is that
+much of the seed's apparent edge was *selection bias*: the seed was today's
+leaders. The naked VCP + Trend Template signal, on a fair universe, is marginal
+after costs — which is exactly why the quality filters (breakout-volume
+confirmation, RS-rank selection among signals, a market-regime gate) matter, and
+why point-in-time data is needed before any number is trusted forward.
 
 ## Known limitations (read before trusting output)
 
