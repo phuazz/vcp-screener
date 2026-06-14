@@ -174,6 +174,10 @@ class BacktestConfig:
     # Risk-based position sizing: each trade risks this fraction of current
     # equity between entry and the initial stop. Notional is capped so a very
     # tight stop cannot produce an oversized position.
+    # Concentration was tested (1.5% risk / 6 slots / 35% cap) and rejected: it
+    # doubled drawdown (-19% -> -37%) for no extra return and a lower Sharpe
+    # (0.43 -> 0.38) — over-betting past the optimal fraction (variance drag
+    # cancels the return benefit). The conservative settings are superior.
     risk_per_trade: float = 0.0075       # 0.75 per cent of equity at risk
     max_position_pct: float = 0.25       # no single position above 25 per cent
     max_positions: int = 8               # portfolio concurrency cap
