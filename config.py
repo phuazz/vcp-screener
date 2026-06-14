@@ -140,6 +140,59 @@ class RSConfig:
 
 
 @dataclass(frozen=True)
+class BacktestConfig:
+    """Historical simulation parameters.
+
+    The backtest is indicative only: it runs over the current seed universe on
+    yfinance data, so it carries survivorship and selection bias that cannot be
+    removed without point-in-time data. Treat its numbers as a sanity check on
+    the rules, never as a deployment input. Costs are deliberately conservative.
+    """
+
+    history_period: str = "10y"          # longer window than the live screen
+    benchmark: str = "SPY"
+
+    initial_equity: float = 100_000.0
+
+    # Idle cash earns a money-market yield. Modelling cash at 0 per cent would
+    # heavily penalise a low-exposure strategy that sits in cash most of the
+    # time; a conservative flat yield is the more honest assumption. This is a
+    # realism correction, not a return-flattering tuning knob.
+    cash_yield_annual: float = 0.02
+
+    # Risk-based position sizing: each trade risks this fraction of current
+    # equity between entry and the initial stop. Notional is capped so a very
+    # tight stop cannot produce an oversized position.
+    risk_per_trade: float = 0.0075       # 0.75 per cent of equity at risk
+    max_position_pct: float = 0.25       # no single position above 25 per cent
+    max_positions: int = 8               # portfolio concurrency cap
+
+    # Costs. Breakouts and stops gap, so entry slippage is set above exit.
+    entry_slippage: float = 0.0020       # 20 bps
+    exit_slippage: float = 0.0010        # 10 bps
+    commission: float = 0.0005           # 5 bps per side
+
+    # Exit rule. The initial hard stop is the last contraction low (from the
+    # detector) and controls early risk. After a short grace period the position
+    # also trails on a daily close below the trailing moving average — the
+    # 50-day is the standard position-trade give-back line in this school: it
+    # sits well below a healthy uptrend, so it lets winners run rather than
+    # whipsawing out on the first pullback. Whichever trigger fires first wins.
+    trail_ma_len: int = 50
+    exit_grace_bars: int = 5
+
+    # A detected setup is actionable only while price sits below the pivot and
+    # not too far below it; the pending breakout expires after this many bars.
+    setup_expiry_bars: int = 10
+    max_pivot_distance: float = 0.15     # pivot must be within 15 per cent above close
+
+    # Relative-strength gate for the backtest: the name must be outperforming
+    # the benchmark over this trailing window at the setup bar. This is a
+    # look-ahead-free RS proxy that avoids needing the full cross-section.
+    rs_lookback: int = 126
+
+
+@dataclass(frozen=True)
 class Config:
     """Top-level container. Import `CONFIG` elsewhere."""
 
@@ -153,6 +206,7 @@ class Config:
     volume: VolumeConfig = field(default_factory=VolumeConfig)
     liquidity: LiquidityConfig = field(default_factory=LiquidityConfig)
     rs: RSConfig = field(default_factory=RSConfig)
+    backtest: BacktestConfig = field(default_factory=BacktestConfig)
 
 
 CONFIG = Config()

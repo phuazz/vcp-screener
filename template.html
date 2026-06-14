@@ -3,191 +3,347 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VCP Screener</title>
+<title>VCP Screener &amp; Backtest</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
   :root {
-    --bg: #ffffff;
-    --panel: #fbfbfa;
-    --ink: #1b1f24;
-    --muted: #5b6470;
-    --line: #e4e7ec;
-    --green: #1f7a4d;
-    --green-bg: #eef7f1;
-    --amber: #9a6a00;
-    --amber-bg: #fbf4e6;
-    --accent: #2451b3;
+    --ink: #111418; --ink-soft: #4a5159; --ink-faint: #6b727a;
+    --bg: #ffffff; --bg-soft: #f7f8fa; --border: #e3e6ea; --border-strong: #c8ccd2;
+    --accent: #1351b4; --accent-soft: rgba(19,81,180,0.08);
+    --good: #1d7a3a; --good-soft: rgba(29,122,58,0.10);
+    --bad: #b3261e; --bad-soft: rgba(179,38,30,0.06);
+    --warn: #b76e00; --warn-soft: #fbf4e6;
   }
   * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--ink);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    line-height: 1.5;
-    font-size: 15px;
-  }
-  .wrap { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; }
-  header { border-bottom: 1px solid var(--line); padding-bottom: 18px; margin-bottom: 24px; }
-  h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -0.01em; }
-  .sub { color: var(--muted); font-size: 14px; }
-  .updated { color: var(--muted); font-size: 13px; margin-top: 8px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0 28px; }
-  .chip {
-    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
-    padding: 10px 14px; min-width: 110px;
-  }
-  .chip .n { font-size: 22px; font-weight: 600; }
-  .chip .l { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-  h2 { font-size: 16px; margin: 28px 0 12px; display: flex; align-items: center; gap: 8px; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
-  .dot.green { background: var(--green); }
-  .dot.amber { background: var(--amber); }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  thead th {
-    text-align: right; font-weight: 600; color: var(--muted); font-size: 12px;
-    text-transform: uppercase; letter-spacing: 0.03em; padding: 8px 10px;
-    border-bottom: 1px solid var(--line); white-space: nowrap;
-  }
+  body { margin: 0; background: var(--bg); color: var(--ink); line-height: 1.5; font-size: 15px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px 72px; }
+  nav { position: sticky; top: 0; z-index: 20; background: rgba(255,255,255,0.92);
+    backdrop-filter: blur(6px); border-bottom: 1px solid var(--border); }
+  nav .inner { max-width: 1120px; margin: 0 auto; padding: 12px 24px; display: flex; gap: 22px; align-items: baseline; }
+  nav .brand { font-weight: 700; letter-spacing: -0.01em; }
+  nav a { color: var(--ink-soft); text-decoration: none; font-size: 14px; }
+  nav a:hover { color: var(--accent); }
+  header.page { padding: 32px 0 6px; }
+  h1 { font-size: 25px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { color: var(--ink-soft); font-size: 14.5px; max-width: 760px; }
+  .updated { color: var(--ink-faint); font-size: 13px; margin-top: 8px; }
+  h2 { font-size: 18px; margin: 40px 0 4px; letter-spacing: -0.01em; padding-top: 8px; }
+  h3 { font-size: 15px; margin: 26px 0 4px; }
+  .section-sub { color: var(--ink-soft); font-size: 13.5px; margin: 4px 0 16px; max-width: 880px; }
+  .section-sub strong { color: var(--ink); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 7px; }
+  .dot.green { background: var(--good); } .dot.amber { background: var(--warn); }
+  .dot.blue { background: var(--accent); }
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 8px; }
+  .chip { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; min-width: 104px; }
+  .chip .n { font-size: 21px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .chip .l { font-size: 11.5px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.04em; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; margin: 8px 0 6px; }
+  .kpi { background: var(--bg-card,#fff); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .kpi .v { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .kpi .v.good { color: var(--good); } .kpi .v.bad { color: var(--bad); }
+  .kpi .l { font-size: 11.5px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.03em; margin-top: 2px; }
+  .kpi .cmp { font-size: 11px; color: var(--ink-faint); margin-top: 3px; }
+  .chart { width: 100%; height: 380px; }
+  .chart.tall { height: 460px; }
+  .chart.short { height: 240px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  thead th { text-align: right; font-weight: 600; color: var(--ink-faint); font-size: 11.5px;
+    text-transform: uppercase; letter-spacing: 0.03em; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; position: sticky; top: 0; background: var(--bg); }
   thead th.l, tbody td.l { text-align: left; }
-  tbody td { text-align: right; padding: 9px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-  tbody tr:hover { background: var(--panel); }
+  tbody td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  tbody tr:hover { background: var(--bg-soft); }
   .tick { font-weight: 600; }
-  .mono { font-variant-numeric: tabular-nums; }
+  .pos { color: var(--good); } .neg { color: var(--bad); }
+  .scroll { max-height: 460px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
   .tags { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
-  .tag {
-    background: var(--amber-bg); color: var(--amber); border-radius: 5px;
-    padding: 1px 7px; font-size: 11px; white-space: nowrap;
-  }
-  .empty { color: var(--muted); background: var(--panel); border: 1px dashed var(--line);
-    border-radius: 8px; padding: 18px; font-size: 14px; }
-  .note { margin-top: 36px; padding-top: 18px; border-top: 1px solid var(--line);
-    color: var(--muted); font-size: 12.5px; line-height: 1.6; }
-  .note strong { color: var(--ink); }
-  a { color: var(--accent); }
+  .tag { background: var(--warn-soft); color: var(--warn); border-radius: 5px; padding: 1px 7px; font-size: 11px; white-space: nowrap; }
+  .tag.r { background: var(--bg-soft); color: var(--ink-soft); }
+  .empty { color: var(--ink-faint); background: var(--bg-soft); border: 1px dashed var(--border); border-radius: 8px; padding: 18px; font-size: 14px; }
+  .banner { border: 1px solid var(--warn); background: var(--warn-soft); border-radius: 8px; padding: 14px 16px; margin: 14px 0 22px; font-size: 13.5px; color: #5c4300; }
+  .banner strong { color: #4a3600; }
+  .banner ol { margin: 8px 0 0; padding-left: 20px; }
+  .banner li { margin: 3px 0; }
+  .note { margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--ink-faint); font-size: 12.5px; line-height: 1.6; }
+  .note strong { color: var(--ink-soft); }
+  a.inline { color: var(--accent); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  @media (max-width: 760px) { .two { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
+<nav><div class="inner">
+  <span class="brand">VCP Screener</span>
+  <a href="#screen">Live screen</a>
+  <a href="#backtest">Backtest</a>
+  <a href="#method">Method &amp; caveats</a>
+</div></nav>
+
 <div class="wrap">
-  <header>
-    <h1>VCP Screener</h1>
-    <div class="sub">Minervini-style Volatility Contraction Pattern, gated by the Trend Template. Personal research signal.</div>
+  <header class="page">
+    <h1>VCP Screener &amp; Backtest</h1>
+    <div class="sub">A rules-based Minervini-style Volatility Contraction Pattern screen, gated by the
+      Trend Template, with an indicative historical backtest. Personal research signal &mdash; not investment advice.</div>
     <div class="updated" id="updated"></div>
   </header>
 
+  <!-- ========================= LIVE SCREEN ========================= -->
+  <h2 id="screen">Live screen</h2>
+  <div class="section-sub">Tonight's screen over the curated Russell 1000 seed. Candidates have cleared the full
+    test; the watchlist holds confirmed uptrends whose base is not yet clean.</div>
   <div class="chips" id="chips"></div>
 
-  <h2><span class="dot green"></span> Confirmed VCP candidates</h2>
+  <h3><span class="dot green"></span>Confirmed VCP candidates</h3>
+  <div class="section-sub">Passed the eight Trend Template conditions, the RS-rank and liquidity floors, and the
+    full VCP test. <strong>Pivot</strong> is the breakout line; <strong>stop</strong> sits below the last
+    contraction low; <strong>risk %</strong> is the pivot-to-stop distance.</div>
   <div id="candidates"></div>
 
-  <h2><span class="dot amber"></span> Watchlist — cleared the Trend Template, not yet a clean base</h2>
+  <h3><span class="dot amber"></span>Watchlist &mdash; in an uptrend, base not yet clean</h3>
+  <div class="section-sub">Cleared the Trend Template but missed the VCP test. The <strong>missing</strong> tags
+    show why &mdash; most often the base is still too loose or volume has not dried up.</div>
   <div id="watchlist"></div>
 
+  <!-- ========================= BACKTEST ========================= -->
+  <h2 id="backtest">Strategy backtest <span style="font-weight:400;color:var(--warn);font-size:14px;">&mdash; indicative only</span></h2>
+  <div class="banner" id="caveat-banner">
+    <strong>Read this before the numbers.</strong> This backtest runs over the <em>current</em> seed names on
+    yfinance data and is therefore biased upward. Treat it as a sanity check on the rules, never as a forward
+    return estimate. The three ways it is silently flattered:
+    <ol>
+      <li><strong>Survivorship and selection bias (dominant).</strong> The universe is today's leaders, included
+        precisely because they already worked. Only point-in-time data removes this.</li>
+      <li><strong>Look-ahead is avoided, but the universe is not.</strong> The base and pivot use only prior data
+        and breakouts fill from their own bar &mdash; yet the <em>choice</em> of names is hindsight.</li>
+      <li><strong>Fills are modelled with slippage</strong> (entries and stops gap), but real breakout execution
+        is still harder than any simulation.</li>
+    </ol>
+  </div>
+
+  <div class="section-sub" id="bt-window"></div>
+  <div class="kpis" id="bt-kpis"></div>
+  <div class="section-sub" style="margin-top:10px;">The strategy is a <strong>risk-controlled sleeve</strong>:
+    each trade risks a fixed fraction of equity, capital sits in cash when no setup qualifies, and idle cash earns a
+    conservative money-market yield. Compare it to SPY on <strong>risk-adjusted</strong> terms (Sharpe, drawdown),
+    not raw return &mdash; its low average exposure caps absolute CAGR by design.</div>
+
+  <h3>Equity curve vs SPY</h3>
+  <div class="section-sub">Growth of the initial stake, strategy versus a fully-invested SPY buy-and-hold over the
+    same window, log scale. The strategy spends most of its time in cash, so it trails SPY in raw terms while taking
+    far less drawdown.</div>
+  <div id="equity-chart" class="chart tall"></div>
+
+  <h3>Drawdown</h3>
+  <div class="section-sub">Underwater plot &mdash; the strategy's distance below its own running high-water mark.
+    The shallow troughs versus SPY's are the point of a stop-disciplined breakout method.</div>
+  <div id="dd-chart" class="chart short"></div>
+
+  <div class="two">
+    <div>
+      <h3>Calendar-year returns</h3>
+      <div class="section-sub">Strategy versus SPY by year. The first and last years are partial.</div>
+      <div id="annual-chart" class="chart"></div>
+    </div>
+    <div>
+      <h3>Trade outcome distribution (R multiples)</h3>
+      <div class="section-sub">Each closed trade in units of initial risk (R). A right-skewed tail &mdash; a few
+        large winners paying for many small losers &mdash; is the signature of a trend-following edge.</div>
+      <div id="r-chart" class="chart"></div>
+    </div>
+  </div>
+
+  <h3>Anatomy of a trade &mdash; <span id="ex-ticker"></span></h3>
+  <div class="section-sub">The highest-R trade in the backtest, shown to make the mechanics concrete. The
+    <strong style="color:var(--ink-soft)">grey zig-zag</strong> traces the detected contractions tightening into the
+    base; the <strong style="color:var(--accent)">blue line</strong> is the pivot (breakout/entry); the
+    <strong style="color:var(--bad)">red dashed line</strong> is the initial stop below the last contraction low.
+    Entry and exit markers show where the rules put capital in and took it out.</div>
+  <div id="example-chart" class="chart tall"></div>
+
+  <h3>All trades</h3>
+  <div class="section-sub">Every closed trade, most recent first. <strong>Reason</strong> is the exit trigger:
+    <em>stop</em> (initial contraction-low stop hit) or <em>trail_ma</em> (close below the 50-day trailing average).</div>
+  <div class="scroll"><div id="trades"></div></div>
+
+  <!-- ========================= METHOD ========================= -->
+  <h2 id="method">Method &amp; caveats</h2>
+  <div class="section-sub" style="max-width:880px;">
+    <strong>Screen.</strong> Trend Template (price above rising 50/150/200-day averages, within 25% of the 52-week
+    high, RS-rank floor) gates every name. The VCP detector then isolates the base at the highest swing high and
+    measures the pullback sequence with a ZigZag rule, requiring tightening contractions, dry volume on the right,
+    and a tight final contraction.<br><br>
+    <strong>Backtest rules.</strong> Enter on a breakout above the pivot (slippage applied); initial hard stop at
+    the last contraction low; trail on a close below the 50-day average after a short grace period. Position size
+    risks a fixed fraction of equity between entry and stop, capped per name, with a portfolio concurrency limit.
+    Costs: commission plus asymmetric slippage (entries gap more than exits). Idle cash earns a conservative yield.
+    <span id="params"></span><br><br>
+    <strong>Data.</strong> Prototype source is yfinance &mdash; no delisted history, best for liquid large caps.
+    Production should move to a survivorship-bias-free, point-in-time feed (Norgate) before any number here is trusted
+    forward. Method and code: <a class="inline" href="https://github.com/phuazz/vcp-screener">github.com/phuazz/vcp-screener</a>.
+  </div>
+
   <div class="note">
-    <strong>How to read this.</strong> Candidates have passed the eight Trend Template
-    conditions, an RS-rank floor, a liquidity floor, and the full VCP test (tightening
-    contractions, dry volume, a tight final contraction). The pivot is the breakout line;
-    the stop sits below the last contraction low; risk is the pivot-to-stop distance. The
-    watchlist holds names in confirmed uptrends whose base is not yet clean — the tags show
-    what is missing.<br><br>
-    <strong>Caveats.</strong> Prototype data is from yfinance (no delisted history, best
-    for liquid large caps) over a curated Russell 1000 seed, not the full index. This is a
-    research signal, not investment advice, and not a recommendation to trade any security.
-    Method and limitations:
-    <a href="https://github.com/phuazz/vcp-screener">github.com/phuazz/vcp-screener</a>.
+    Personal research signal. Not investment advice and not a recommendation to trade any security. Past simulated
+    performance, especially on a survivorship-biased universe, does not indicate future results.
   </div>
 </div>
 
 <script>
-/* Data is injected here by scripts/pipeline.py as window.SCREEN_DATA.
-   For standalone local dev the page falls back to fetching data/candidates.json. */
-const INJECTED = "__SCREEN_DATA__";
+const SCREEN = "__SCREEN_DATA__";
+const BACKTEST = "__BACKTEST_DATA__";
 
-function fmt(n, d = 2) {
-  if (n === null || n === undefined || Number.isNaN(n)) return "&mdash;";
-  return Number(n).toLocaleString("en-GB", { minimumFractionDigits: d, maximumFractionDigits: d });
+/* ---------- formatting helpers ---------- */
+const nf = (n, d=2) => (n===null||n===undefined||Number.isNaN(n)) ? "&mdash;"
+  : Number(n).toLocaleString("en-GB",{minimumFractionDigits:d,maximumFractionDigits:d});
+const pf = (n, d=1) => (n===null||n===undefined||Number.isNaN(n)) ? "&mdash;" : (n*100).toFixed(d)+"%";
+const sign = n => (n>0?"good":(n<0?"bad":""));
+function contractions(arr){ return (!arr||!arr.length) ? "&mdash;" : arr.map(d=>Math.round(d*100)).join(" → ")+"%"; }
+
+const FONT = {family:'-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif', size:12, color:'#4a5159'};
+const GRID = '#e3e6ea';
+function layout(extra){
+  return Object.assign({
+    paper_bgcolor:'#fff', plot_bgcolor:'#fff', font:FONT, margin:{l:54,r:16,t:10,b:36},
+    xaxis:{gridcolor:GRID, zeroline:false}, yaxis:{gridcolor:GRID, zeroline:false},
+    legend:{orientation:'h', y:1.08, x:0, font:{size:12}}, hovermode:'x unified', showlegend:true,
+  }, extra||{});
 }
-function contractions(arr) {
-  if (!arr || !arr.length) return "&mdash;";
-  return arr.map(d => Math.round(d * 100)).join(" → ") + "%";
+const PCONF = {displayModeBar:false, responsive:true};
+
+/* ---------- live screen ---------- */
+function renderChips(d){
+  const items=[["Universe",d.universe_size],["Fetched",d.fetched],["Candidates",d.num_candidates],
+    ["Watchlist",d.num_watchlist ?? (d.watchlist?d.watchlist.length:0)]];
+  document.getElementById("chips").innerHTML = items.map(([l,n])=>
+    `<div class="chip"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
+}
+function renderCandidates(rows){
+  const el=document.getElementById("candidates");
+  if(!rows||!rows.length){ el.innerHTML=`<div class="empty">No confirmed VCP candidates in the current screen.
+    A VCP screen routinely returns none in a soft or corrective tape &mdash; that is the gate doing its job.</div>`; return; }
+  const H=["Ticker","Close","Pivot","% to pivot","Stop","Risk %","RS","Contractions","ADV $m"];
+  el.innerHTML=`<table><thead><tr><th class="l">${H[0]}</th>${H.slice(1).map(h=>`<th>${h}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map(r=>`<tr><td class="l tick">${r.ticker}</td><td>${nf(r.close)}</td><td>${nf(r.pivot)}</td>
+    <td>${nf(r.pct_to_pivot,1)}</td><td>${nf(r.stop)}</td><td>${nf(r.risk_pct,1)}</td><td>${nf(r.rs_rank,0)}</td>
+    <td>${contractions(r.contractions)}</td><td>${nf(r.adv_usd_m,1)}</td></tr>`).join("")}</tbody></table>`;
+}
+function renderWatchlist(rows){
+  const el=document.getElementById("watchlist");
+  if(!rows||!rows.length){ el.innerHTML=`<div class="empty">No names cleared the Trend Template gate.</div>`; return; }
+  const H=["Ticker","Close","RS","Contractions","Final range %","Vol ratio","Missing"];
+  el.innerHTML=`<table><thead><tr><th class="l">${H[0]}</th>${H.slice(1,-1).map(h=>`<th>${h}</th>`).join("")}<th>${H[6]}</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr><td class="l tick">${r.ticker}</td><td>${nf(r.close)}</td><td>${nf(r.rs_rank,0)}</td>
+    <td>${contractions(r.contractions)}</td><td>${nf(r.final_range_pct,1)}</td><td>${nf(r.recent_vol_ratio,2)}</td>
+    <td><div class="tags">${(r.missing||[]).map(m=>`<span class="tag">${m}</span>`).join("")}</div></td></tr>`).join("")}</tbody></table>`;
 }
 
-function renderChips(d) {
-  const chips = [
-    ["Universe", d.universe_size],
-    ["Fetched", d.fetched],
-    ["Candidates", d.num_candidates],
-    ["Watchlist", d.num_watchlist ?? (d.watchlist ? d.watchlist.length : 0)],
+/* ---------- backtest ---------- */
+function renderBacktest(b){
+  if(!b||!b.kpis){ document.getElementById("bt-window").innerHTML="Backtest data not available."; return; }
+  const k=b.kpis, m=b.meta;
+  document.getElementById("bt-window").innerHTML =
+    `Window <strong>${m.start} → ${m.end}</strong>, ${m.names_traded} names, ${k.num_trades} trades,
+     ${nf(m.initial_equity,0)} starting equity.`;
+  document.getElementById("params").innerHTML =
+    `Parameters this run: risk ${pf(m.risk_per_trade,2)} per trade, max ${m.max_positions} positions,
+     entry slippage ${(m.entry_slippage*1e4).toFixed(0)}bps, exit ${(m.exit_slippage*1e4).toFixed(0)}bps,
+     commission ${(m.commission*1e4).toFixed(0)}bps/side, trail ${m.trail_ma_len}-day, cash yield ${pf(m.cash_yield_annual,1)}.`;
+
+  const K=[
+    ["CAGR", pf(k.cagr), "SPY "+pf(k.spy_cagr), sign(k.cagr)],
+    ["Sharpe", nf(k.sharpe,2), "SPY "+nf(k.spy_sharpe,2), ""],
+    ["Max drawdown", pf(k.max_dd), "SPY "+pf(k.spy_max_dd), "good"],
+    ["Total return", pf(k.total_return,0), "SPY "+pf(k.spy_total_return,0), sign(k.total_return)],
+    ["Sortino", nf(k.sortino,2), "", ""],
+    ["Calmar", nf(k.calmar,2), "", ""],
+    ["Win rate", pf(k.win_rate,0), "", ""],
+    ["Profit factor", nf(k.profit_factor,2), "", k.profit_factor>1?"good":"bad"],
+    ["Expectancy", nf(k.expectancy_r,2)+"R", "", sign(k.expectancy_r)],
+    ["Avg win", pf(k.avg_win_pct/100,1), "", "good"],
+    ["Avg loss", pf(k.avg_loss_pct/100,1), "", "bad"],
+    ["Avg exposure", pf(k.exposure,0), "", ""],
   ];
-  document.getElementById("chips").innerHTML = chips.map(
-    ([l, n]) => `<div class="chip"><div class="n mono">${n}</div><div class="l">${l}</div></div>`
-  ).join("");
+  document.getElementById("bt-kpis").innerHTML = K.map(([l,v,c,cls])=>
+    `<div class="kpi"><div class="v ${cls}">${v}</div><div class="l">${l}</div>${c?`<div class="cmp">${c}</div>`:""}</div>`).join("");
+
+  // Equity curve (log)
+  Plotly.newPlot('equity-chart', [
+    {x:b.equity.dates, y:b.equity.strategy, name:'VCP strategy', mode:'lines', line:{color:'#1351b4', width:2}},
+    {x:b.equity.dates, y:b.equity.spy, name:'SPY buy & hold', mode:'lines', line:{color:'#9aa0a8', width:1.5}},
+  ], layout({yaxis:{gridcolor:GRID, type:'log', tickprefix:'$'}}), PCONF);
+
+  // Drawdown
+  Plotly.newPlot('dd-chart', [
+    {x:b.equity.dates, y:b.equity.drawdown.map(v=>v*100), name:'Drawdown', fill:'tozeroy',
+     mode:'lines', line:{color:'#b3261e', width:1}, fillcolor:'rgba(179,38,30,0.10)'},
+  ], layout({showlegend:false, yaxis:{gridcolor:GRID, ticksuffix:'%'}}), PCONF);
+
+  // Annual returns
+  Plotly.newPlot('annual-chart', [
+    {x:b.annual.years, y:b.annual.strategy.map(v=>v===null?null:v*100), name:'Strategy', type:'bar', marker:{color:'#1351b4'}},
+    {x:b.annual.years, y:b.annual.spy.map(v=>v===null?null:v*100), name:'SPY', type:'bar', marker:{color:'#cdd2d8'}},
+  ], layout({barmode:'group', hovermode:'closest', yaxis:{gridcolor:GRID, ticksuffix:'%'}}), PCONF);
+
+  // R distribution
+  Plotly.newPlot('r-chart', [
+    {x:b.r_multiples, type:'histogram', marker:{color:'#1351b4'}, xbins:{size:0.5}},
+  ], layout({showlegend:false, hovermode:'closest', xaxis:{gridcolor:GRID, title:{text:'R multiple',font:{size:11}}},
+     yaxis:{gridcolor:GRID, title:{text:'trades',font:{size:11}}}}), PCONF);
+
+  renderExample(b.example);
+  renderTrades(b.trades);
 }
 
-function renderCandidates(rows) {
-  const el = document.getElementById("candidates");
-  if (!rows || !rows.length) {
-    el.innerHTML = `<div class="empty">No confirmed VCP candidates in the current screen.
-      A VCP screen routinely returns none in a soft or corrective tape &mdash; that is the
-      gate doing its job, not a failure.</div>`;
-    return;
-  }
-  const head = ["Ticker","Close","Pivot","% to pivot","Stop","Risk %","RS","Contractions","ADV $m"];
-  el.innerHTML = `<table><thead><tr>
-    <th class="l">${head[0]}</th>${head.slice(1).map(h => `<th>${h}</th>`).join("")}
-    </tr></thead><tbody>${rows.map(r => `<tr>
-      <td class="l tick">${r.ticker}</td>
-      <td class="mono">${fmt(r.close)}</td>
-      <td class="mono">${fmt(r.pivot)}</td>
-      <td class="mono">${fmt(r.pct_to_pivot, 1)}</td>
-      <td class="mono">${fmt(r.stop)}</td>
-      <td class="mono">${fmt(r.risk_pct, 1)}</td>
-      <td class="mono">${fmt(r.rs_rank, 0)}</td>
-      <td class="mono">${contractions(r.contractions)}</td>
-      <td class="mono">${fmt(r.adv_usd_m, 1)}</td>
-    </tr>`).join("")}</tbody></table>`;
+function renderExample(ex){
+  if(!ex){ document.getElementById('example-chart').innerHTML='<div class="empty">No example trade.</div>'; return; }
+  document.getElementById('ex-ticker').textContent = `${ex.ticker} (+${ex.return_pct}%, ${ex.r_multiple}R)`;
+  const candle={x:ex.dates, open:ex.open, high:ex.high, low:ex.low, close:ex.close, type:'candlestick', name:ex.ticker,
+    increasing:{line:{color:'#1d7a3a'}}, decreasing:{line:{color:'#b3261e'}}, showlegend:false};
+  const zig={x:ex.swings.map(s=>s.date), y:ex.swings.map(s=>s.price), mode:'lines+markers', name:'contractions',
+    line:{color:'#8a9099', width:1.5, dash:'dot'}, marker:{size:5, color:'#6b727a'}, showlegend:false};
+  const entry={x:[ex.entry_date], y:[ex.entry], mode:'markers', name:'entry', marker:{symbol:'triangle-up', size:13, color:'#1d7a3a'}, showlegend:false};
+  const exit={x:[ex.exit_date], y:[ex.exit], mode:'markers', name:'exit', marker:{symbol:'triangle-down', size:13, color:'#b3261e'}, showlegend:false};
+  const lay=layout({showlegend:false, xaxis:{gridcolor:GRID, rangeslider:{visible:false}}, hovermode:'closest',
+    shapes:[
+      {type:'line', x0:ex.dates[0], x1:ex.dates[ex.dates.length-1], y0:ex.pivot, y1:ex.pivot, line:{color:'#1351b4', width:1.5}},
+      {type:'line', x0:ex.dates[0], x1:ex.dates[ex.dates.length-1], y0:ex.stop, y1:ex.stop, line:{color:'#b3261e', width:1.2, dash:'dash'}},
+    ],
+    annotations:[
+      {x:ex.dates[ex.dates.length-1], y:ex.pivot, xanchor:'right', yanchor:'bottom', text:'pivot', font:{color:'#1351b4', size:11}, showarrow:false},
+      {x:ex.dates[ex.dates.length-1], y:ex.stop, xanchor:'right', yanchor:'top', text:'stop', font:{color:'#b3261e', size:11}, showarrow:false},
+    ]});
+  Plotly.newPlot('example-chart', [candle, zig, entry, exit], lay, PCONF);
 }
 
-function renderWatchlist(rows) {
-  const el = document.getElementById("watchlist");
-  if (!rows || !rows.length) {
-    el.innerHTML = `<div class="empty">No names cleared the Trend Template gate in the
-      current screen.</div>`;
-    return;
-  }
-  const head = ["Ticker","Close","RS","Contractions","Final range %","Vol ratio","Missing"];
-  el.innerHTML = `<table><thead><tr>
-    <th class="l">${head[0]}</th>${head.slice(1, -1).map(h => `<th>${h}</th>`).join("")}
-    <th>${head[head.length-1]}</th>
-    </tr></thead><tbody>${rows.map(r => `<tr>
-      <td class="l tick">${r.ticker}</td>
-      <td class="mono">${fmt(r.close)}</td>
-      <td class="mono">${fmt(r.rs_rank, 0)}</td>
-      <td class="mono">${contractions(r.contractions)}</td>
-      <td class="mono">${fmt(r.final_range_pct, 1)}</td>
-      <td class="mono">${fmt(r.recent_vol_ratio, 2)}</td>
-      <td><div class="tags">${(r.missing || []).map(m => `<span class="tag">${m}</span>`).join("")}</div></td>
-    </tr>`).join("")}</tbody></table>`;
+function renderTrades(rows){
+  const el=document.getElementById('trades');
+  if(!rows||!rows.length){ el.innerHTML='<div class="empty">No trades.</div>'; return; }
+  const r=[...rows].reverse();
+  const H=["Ticker","Entry","Exit","Held (bars)","Return %","R","Reason"];
+  el.innerHTML=`<table><thead><tr><th class="l">${H[0]}</th><th>Entry</th><th>Exit</th><th>Held</th>
+    <th>Return %</th><th>R</th><th class="l">Reason</th></tr></thead><tbody>${r.map(t=>`<tr>
+    <td class="l tick">${t.ticker}</td><td>${t.entry_date}</td><td>${t.exit_date}</td><td>${t.bars}</td>
+    <td class="${t.return_pct>0?'pos':'neg'}">${nf(t.return_pct,1)}</td>
+    <td class="${(t.r_multiple||0)>0?'pos':'neg'}">${t.r_multiple===null?'&mdash;':nf(t.r_multiple,2)}</td>
+    <td class="l"><span class="tag r">${t.reason}</span></td></tr>`).join("")}</tbody></table>`;
 }
 
-function render(d) {
-  const dt = d.generated_at ? new Date(d.generated_at) : null;
-  document.getElementById("updated").textContent = dt
-    ? "Last screen: " + dt.toUTCString().replace("GMT", "UTC")
-    : "";
-  renderChips(d);
-  renderCandidates(d.candidates);
-  renderWatchlist(d.watchlist);
+/* ---------- boot ---------- */
+function parseInjected(s){ if(s && s[0]==="{"){ try{ return JSON.parse(s); }catch(e){} } return null; }
+function render(screen, bt){
+  const dt = screen && screen.generated_at ? new Date(screen.generated_at) : null;
+  document.getElementById("updated").textContent = dt ? "Last screen: "+dt.toUTCString().replace("GMT","UTC") : "";
+  if(screen){ renderChips(screen); renderCandidates(screen.candidates); renderWatchlist(screen.watchlist); }
+  renderBacktest(bt);
 }
-
-(function () {
-  if (INJECTED && INJECTED[0] === "{") {       // pipeline injected real JSON
-    try { render(JSON.parse(INJECTED)); return; } catch (e) { /* fall through */ }
-  }
-  fetch("data/candidates.json")                 // standalone dev fallback
-    .then(r => r.json()).then(render)
-    .catch(() => { document.getElementById("candidates").innerHTML =
-      `<div class="empty">No data. Run <code>python run_screen.py</code> then
-       <code>python scripts/pipeline.py</code>.</div>`; });
+(function(){
+  const s=parseInjected(SCREEN), b=parseInjected(BACKTEST);
+  if(s || b){ render(s||{}, b||{}); return; }
+  Promise.all([
+    fetch("data/candidates.json").then(r=>r.json()).catch(()=>({})),
+    fetch("data/backtest.json").then(r=>r.json()).catch(()=>({})),
+  ]).then(([sd,bd])=>render(sd,bd));
 })();
 </script>
 </body>

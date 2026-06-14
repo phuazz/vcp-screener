@@ -55,7 +55,32 @@ pip install -r requirements.txt
 python run_screen.py            # screen the seed universe (uses cache)
 python run_screen.py --no-cache # force fresh downloads
 python run_screen.py --all      # print per-name reject diagnostics
+python run_backtest.py          # indicative historical backtest -> data/backtest.json
+python scripts/pipeline.py      # build docs/index.html from template + both datasets
 ```
+
+The dashboard (`docs/index.html`, published via GitHub Pages) shows the live
+screen, the watchlist, and the backtest visuals — equity curve versus SPY,
+drawdown, calendar-year returns, the R-multiple distribution, an annotated
+example trade, and the full trade list. The nightly Action refreshes the screen;
+the backtest changes slowly and is rebuilt occasionally with `run_backtest.py`.
+
+## Backtest (indicative only)
+
+`screener/backtest.py` runs a walk-forward, event-driven, portfolio-level
+simulation. At each bar the base and pivot are detected from prior data only;
+the breakout fills from a later bar's own range; stops and slippage are modelled
+so gaps are not assumed away. Rules: enter on a breakout above the pivot; initial
+hard stop at the last contraction low; trail on a close below the 50-day average
+after a short grace period; fixed-fractional risk sizing with a portfolio
+concurrency cap; idle cash earns a conservative yield. All parameters live in
+`BacktestConfig` in `config.py`.
+
+**It is indicative only.** It runs over the *current* seed names on yfinance
+data, so it is survivorship- and selection-biased and flatters the result. The
+three failure modes are stated on the dashboard and in "Three ways this could be
+silently wrong" below. Read the numbers as a sanity check on the rules, never as
+a forward return estimate.
 
 ## Known limitations (read before trusting output)
 
@@ -107,14 +132,18 @@ python run_screen.py --all      # print per-name reject diagnostics
 ## Layout
 
 ```
-config.py                 # strategy spec — the parameter block IS the strategy
-run_screen.py             # orchestrator -> data/candidates.json
+config.py                 # strategy + backtest spec — the parameter block IS the strategy
+run_screen.py             # screen orchestrator -> data/candidates.json
+run_backtest.py           # backtest runner -> data/backtest.json
+template.html             # dashboard source (Plotly), with fetch fallback
+scripts/pipeline.py       # inject both datasets into docs/index.html
 screener/
   universe.py             # seed universe + IWB holdings parser
   data.py                 # yfinance fetch + parquet cache
   swings.py               # ZigZag swing detection (load-bearing)
   trend_template.py       # Minervini Trend Template + RS rank
   vcp.py                  # base isolation, contraction analysis, pivot/stop
+  backtest.py             # walk-forward portfolio simulation + metrics
 ```
 
 Last updated: 2026-06-14.
