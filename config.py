@@ -174,11 +174,13 @@ class BacktestConfig:
 
     # Exit rule. The initial hard stop is the last contraction low (from the
     # detector) and controls early risk. After a short grace period the position
-    # also trails on a daily close below the trailing moving average — the
-    # 50-day is the standard position-trade give-back line in this school: it
-    # sits well below a healthy uptrend, so it lets winners run rather than
-    # whipsawing out on the first pullback. Whichever trigger fires first wins.
-    trail_ma_len: int = 50
+    # trails on a daily close below the trailing moving average.
+    #
+    # Set to 200 to test the "let winners run" hypothesis: hold while the name
+    # remains in a Stage 2 uptrend (above its 200-day) so one multi-month run is
+    # a single trade rather than a string of clipped 50-day exits. A 50-day
+    # trail churns explosive names into many small wins and gives back the trend.
+    trail_ma_len: int = 200
     exit_grace_bars: int = 5
 
     # A detected setup is actionable only while price sits below the pivot and

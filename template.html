@@ -163,7 +163,8 @@
 
   <h3>All trades</h3>
   <div class="section-sub">Every closed trade, most recent first. <strong>Reason</strong> is the exit trigger:
-    <em>stop</em> (initial contraction-low stop hit) or <em>trail_ma</em> (close below the 50-day trailing average).</div>
+    <em>stop</em> (initial contraction-low stop hit) or <em>trail_ma</em> (close below the 200-day average &mdash;
+    a Stage 2 trend breakdown).</div>
   <div class="scroll"><div id="trades"></div></div>
 
   <!-- ========================= METHOD ========================= -->
@@ -174,7 +175,8 @@
     measures the pullback sequence with a ZigZag rule, requiring tightening contractions, dry volume on the right,
     and a tight final contraction.<br><br>
     <strong>Backtest rules.</strong> Enter on a breakout above the pivot (slippage applied); initial hard stop at
-    the last contraction low; trail on a close below the 50-day average after a short grace period. Position size
+    the last contraction low; then hold while the Stage 2 uptrend is intact, exiting on a close below the 200-day
+    average (so a multi-month run is one trade, not a string of clipped exits). Position size
     risks a fixed fraction of equity between entry and stop, capped per name, with a portfolio concurrency limit.
     Costs: commission plus asymmetric slippage (entries gap more than exits). Idle cash earns a conservative yield.
     <span id="params"></span><br><br>

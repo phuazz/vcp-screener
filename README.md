@@ -71,10 +71,13 @@ the backtest changes slowly and is rebuilt occasionally with `run_backtest.py`.
 simulation. At each bar the base and pivot are detected from prior data only;
 the breakout fills from a later bar's own range; stops and slippage are modelled
 so gaps are not assumed away. Rules: enter on a breakout above the pivot; initial
-hard stop at the last contraction low; trail on a close below the 50-day average
-after a short grace period; fixed-fractional risk sizing with a portfolio
-concurrency cap; idle cash earns a conservative yield. All parameters live in
-`BacktestConfig` in `config.py`.
+hard stop at the last contraction low; then hold while the Stage 2 uptrend is
+intact, exiting on a close below the 200-day average (so a multi-month run is one
+trade rather than a string of clipped exits); fixed-fractional risk sizing with a
+portfolio concurrency cap; idle cash earns a conservative yield. Three toggleable
+quality filters — breakout-volume confirmation, RS-ranked entries, and a
+market-regime gate — sit in front. All parameters live in `BacktestConfig` in
+`config.py`.
 
 **It is indicative only.** It runs over the *current* universe on yfinance data,
 so it is survivorship- and selection-biased. The three failure modes are stated
@@ -86,15 +89,25 @@ numbers as a sanity check on the rules, never as a forward return estimate.
 1000 proxy; drop an official `data/iwb_holdings.csv` to override it with the real
 constituents. The buy-and-hold benchmark is IWB (iShares Russell 1000).
 
-**Key finding (be honest about this).** On the curated 47-name seed the strategy
-looked strong (profit factor ~2.1, +0.5R expectancy). On the broad ~900-name
-universe the edge largely collapses (profit factor ~1.2, +0.1R), exposure rises
-to ~75 per cent, and drawdown widens to roughly the index's. The lesson is that
-much of the seed's apparent edge was *selection bias*: the seed was today's
-leaders. The naked VCP + Trend Template signal, on a fair universe, is marginal
-after costs — which is exactly why the quality filters (breakout-volume
-confirmation, RS-rank selection among signals, a market-regime gate) matter, and
-why point-in-time data is needed before any number is trusted forward.
+**Key findings (be honest about these), 2017-2026 window:**
+
+- *Selection bias.* The curated 47-name seed looked strong (PF ~2.1, +0.5R). On
+  the broad ~900-name universe the edge largely collapses (PF ~1.2, +0.1R, CAGR
+  ~3%) and drawdown widens to roughly the index's. Much of the seed's apparent
+  edge was selection bias — it was today's leaders.
+- *Period is not the excuse.* Momentum worked superbly this decade: a systematic
+  momentum ETF (MTUM) returned ~17% CAGR, equal-weight (RSP) ~12%, cap-weight
+  (IWB) ~15%. The premium was available; the implementation was not capturing it.
+- *Trade management was the wound.* A 50-day trailing exit churned multi-hundred-
+  percent runs into many small ~+16% trades. Switching to a Stage 2 hold (exit on
+  a close below the 200-day) roughly doubled the result — average win ~+38%,
+  expectancy +0.29R, CAGR ~7% — confirming "let winners run" was the missing
+  discipline.
+- *Still not an index-beater.* Even after the fix, ~7% CAGR trails passive
+  momentum. The remaining gap points to what is genuinely missing: tighter
+  leadership selection, concentration/sizing, and above all the fundamental
+  overlay (Minervini's actual SEPA edge) on point-in-time data. The chart pattern
+  alone is a timing tool, not the source of the edge.
 
 ## Known limitations (read before trusting output)
 
