@@ -58,9 +58,16 @@ def _fetch(ticker: str, period: str) -> pd.DataFrame:
 # ----------------------------------------------------------------------------
 
 def _prepare(df: pd.DataFrame, bench_close: pd.Series) -> pd.DataFrame:
-    """Attach the Trend Template booleans, trailing EMA, and the RS gate."""
+    """Attach the Trend Template booleans, liquidity gate, trail, and RS score.
+
+    Note: the relative-strength gate is NOT applied here. We store the raw RS
+    score and rank it cross-sectionally across the universe later, so the
+    backtest uses the same RS-rank definition (top-decile, like the live screen)
+    rather than a looser beats-the-benchmark test.
+    """
     t = CONFIG.trend
     bt = CONFIG.backtest
+    liq = CONFIG.liquidity
     c = df["Close"]
 
     sma50 = c.rolling(t.sma_short).mean()
@@ -77,20 +84,24 @@ def _prepare(df: pd.DataFrame, bench_close: pd.Series) -> pd.DataFrame:
         & ((high252 / c - 1.0) <= t.max_pct_below_52w_high)
     )
 
-    # RS gate: name outperforms the benchmark over the trailing window.
+    # Liquidity floor — the same dollar-volume gate the live screen enforces,
+    # so the backtest does not trade names too thin for the slippage model.
+    adv = (c * df["Volume"]).rolling(liq.dollar_volume_days).mean()
+    liquid_ok = adv >= liq.min_dollar_volume
+
+    # Raw relative-strength score (name minus benchmark trailing return); ranked
+    # cross-sectionally in run_backtest.
     bench = bench_close.reindex(df.index).ffill()
     L = bt.rs_lookback
-    name_ret = c / c.shift(L) - 1.0
-    bench_ret = bench / bench.shift(L) - 1.0
-    rs_ok = name_ret > bench_ret
+    rs_score = (c / c.shift(L) - 1.0) - (bench / bench.shift(L) - 1.0)
 
     df = df.copy()
     df["ma_trail"] = c.rolling(bt.trail_ma_len).mean()
     df["avg_vol"] = df["Volume"].rolling(50).mean()
-    # Continuous relative-strength score (name minus benchmark trailing return)
-    # used to rank competing breakouts on the same bar.
-    df["rs_score"] = (name_ret - bench_ret)
-    df["setup_ok"] = (trend_ok & rs_ok).fillna(False)
+    df["rs_score"] = rs_score
+    # Partial gate: trend template AND liquidity. The RS-rank condition is
+    # added cross-sectionally in run_backtest.
+    df["base_ok"] = (trend_ok & liquid_ok).fillna(False)
     return df
 
 
@@ -137,15 +148,22 @@ def run_backtest(universe: list[str]) -> dict:
         prep = _prepare(raw, bench_close).reindex(calendar)
         prepared[t] = prep
 
-    # Numpy views for the hot loop.
+    # Cross-sectional RS rank (per-bar percentile across the universe), matching
+    # the live screen's RS-rank floor rather than a looser beats-benchmark test.
+    rs_matrix = pd.DataFrame({t: d["rs_score"] for t, d in prepared.items()})
+    rs_rank = rs_matrix.rank(axis=1, pct=True) * 100.0
+    rs_rank_ok = rs_rank >= CONFIG.trend.min_rs_rank
+
+    # Numpy views for the hot loop. Final setup = trend & liquidity & RS-rank.
     arrs = {}
     for t, d in prepared.items():
+        setup = (d["base_ok"] & rs_rank_ok[t].fillna(False)).to_numpy()
         arrs[t] = {
             "o": d["Open"].to_numpy(), "h": d["High"].to_numpy(),
             "l": d["Low"].to_numpy(), "c": d["Close"].to_numpy(),
             "v": d["Volume"].to_numpy(), "avgv": d["avg_vol"].to_numpy(),
             "rs": d["rs_score"].to_numpy(),
-            "trail": d["ma_trail"].to_numpy(), "setup": d["setup_ok"].to_numpy(),
+            "trail": d["ma_trail"].to_numpy(), "setup": setup,
             "df": d,
         }
 
@@ -160,8 +178,12 @@ def run_backtest(universe: list[str]) -> dict:
     daily_cash_yield = (1 + bt.cash_yield_annual) ** (1 / 252) - 1
 
     for i in range(warmup, n):
-        # ---- 0. Idle cash accrues a money-market yield ----------------------
+        # ---- 0. Idle cash accrues; carry each position's last valid close ---
         cash *= (1 + daily_cash_yield)
+        for t in positions:
+            cl = arrs[t]["c"][i]
+            if not np.isnan(cl):
+                positions[t]["last_close"] = cl
 
         # ---- 1. Exits on today's bar ----------------------------------------
         for t in list(positions.keys()):
@@ -198,8 +220,7 @@ def run_backtest(universe: list[str]) -> dict:
         # ---- 2. Entries from armed breakouts --------------------------------
         # Collect this bar's breakouts, apply the regime and breakout-volume
         # gates, then fill the open slots best-first by relative strength.
-        equity_now = cash + sum(positions[t]["shares"] * arrs[t]["c"][i]
-                                for t in positions if not np.isnan(arrs[t]["c"][i]))
+        equity_now = cash + sum(p["shares"] * p["last_close"] for p in positions.values())
         market_ok = regime_ok[i] or not bt.use_regime_filter
         triggered = []
         for t in list(pending.keys()):
@@ -243,7 +264,7 @@ def run_backtest(universe: list[str]) -> dict:
                 positions[t] = {
                     "shares": shares, "entry_gross": gross, "entry_net": entry_net,
                     "stop": p["stop"], "stop0": p["stop"], "entry_date": calendar[i],
-                    "entry_i": i,
+                    "entry_i": i, "last_close": gross,
                 }
             pending.pop(t, None)
 
@@ -266,11 +287,27 @@ def run_backtest(universe: list[str]) -> dict:
                 continue
             pending[t] = {"pivot": pivot, "stop": stop, "bars_left": bt.setup_expiry_bars}
 
-        # ---- 4. Mark to market ---------------------------------------------
-        mv = sum(positions[t]["shares"] * arrs[t]["c"][i]
-                 for t in positions if not np.isnan(arrs[t]["c"][i]))
+        # ---- 4. Mark to market (carry-forward valuation, no vanishing) ------
+        mv = sum(p["shares"] * p["last_close"] for p in positions.values())
         equity_dates.append(calendar[i])
         equity_vals.append(cash + mv)
+
+    # ---- End of run: liquidate any still-open positions at last close so all
+    # capital is accounted and every position closes into the trade record. No
+    # exit costs are applied, to match the carry-forward mark in the equity. ---
+    last_i = n - 1
+    for t, pos in list(positions.items()):
+        px = pos["last_close"]
+        cash += pos["shares"] * px
+        r = ((px - pos["entry_gross"]) / (pos["entry_gross"] - pos["stop0"])
+             if pos["entry_gross"] > pos["stop0"] else float("nan"))
+        trades.append(Trade(
+            ticker=t, entry_date=pos["entry_date"], entry=round(pos["entry_gross"], 2),
+            stop0=round(pos["stop0"], 2), exit_date=calendar[last_i], exit=round(px, 2),
+            shares=pos["shares"], return_pct=round((px / pos["entry_net"] - 1.0) * 100, 2),
+            r_multiple=round(r, 2) if r == r else None, bars=last_i - pos["entry_i"],
+            reason="open_end"))
+    positions.clear()
 
     return _assemble(universe, prepared, calendar, warmup,
                      equity_dates, equity_vals, bench_raw, trades)
@@ -280,15 +317,21 @@ def run_backtest(universe: list[str]) -> dict:
 # Metrics and output assembly
 # ----------------------------------------------------------------------------
 
-def _series_metrics(equity: pd.Series) -> dict:
+def _series_metrics(equity: pd.Series, rf_annual: float = 0.0) -> dict:
+    """Risk and return metrics. Sharpe and Sortino are computed on returns in
+    EXCESS of the risk-free rate, so the yield earned on idle cash is not
+    counted as alpha. The same rf is applied to the benchmark for a fair
+    comparison."""
     rets = equity.pct_change().dropna()
+    rf_daily = (1 + rf_annual) ** (1 / 252) - 1
+    excess = rets - rf_daily
     years = (equity.index[-1] - equity.index[0]).days / 365.25
     total = equity.iloc[-1] / equity.iloc[0] - 1.0
     cagr = (equity.iloc[-1] / equity.iloc[0]) ** (1 / years) - 1.0 if years > 0 else float("nan")
     vol = rets.std() * math.sqrt(252)
-    sharpe = (rets.mean() * 252) / vol if vol > 0 else float("nan")
-    downside = rets[rets < 0].std() * math.sqrt(252)
-    sortino = (rets.mean() * 252) / downside if downside > 0 else float("nan")
+    sharpe = (excess.mean() * 252) / vol if vol > 0 else float("nan")
+    downside = excess[excess < 0].std() * math.sqrt(252)
+    sortino = (excess.mean() * 252) / downside if downside > 0 else float("nan")
     roll_max = equity.cummax()
     dd = equity / roll_max - 1.0
     max_dd = dd.min()
@@ -297,17 +340,58 @@ def _series_metrics(equity: pd.Series) -> dict:
             "sortino": sortino, "max_dd": max_dd, "calmar": calmar, "dd_series": dd}
 
 
+def _trade_stats(trades) -> dict:
+    rets = [t.return_pct for t in trades]
+    wins = [r for r in rets if r > 0]
+    losses = [r for r in rets if r <= 0]
+    rs = [t.r_multiple for t in trades if t.r_multiple is not None]
+    gl = abs(sum(losses))
+    return {
+        "num_trades": len(trades),
+        "win_rate": len(wins) / len(trades) if trades else float("nan"),
+        "profit_factor": sum(wins) / gl if gl > 0 else float("nan"),
+        "expectancy_r": (sum(rs) / len(rs)) if rs else float("nan"),
+    }
+
+
+def _window(equity: pd.Series, bench_eq: pd.Series, trades, rf: float) -> dict:
+    """Compact metric bundle for a sub-period (used for train/holdout)."""
+    m = _series_metrics(equity, rf)
+    bm = _series_metrics(bench_eq, rf)
+    return {
+        "start": str(equity.index[0].date()), "end": str(equity.index[-1].date()),
+        "cagr": m["cagr"], "sharpe": m["sharpe"], "max_dd": m["max_dd"],
+        "bench_cagr": bm["cagr"], "bench_sharpe": bm["sharpe"],
+        **_trade_stats(trades),
+    }
+
+
 def _assemble(universe, prepared, calendar, warmup, eq_dates, eq_vals,
               bench_raw, trades) -> dict:
     bt = CONFIG.backtest
+    rf = bt.risk_free_annual
     equity = pd.Series(eq_vals, index=pd.DatetimeIndex(eq_dates))
 
     # Benchmark buy-and-hold over the same window, scaled to initial equity.
     bench = bench_raw["Close"].reindex(equity.index).ffill()
     bench_eq = bench / bench.iloc[0] * bt.initial_equity
 
-    m = _series_metrics(equity)
-    bm = _series_metrics(bench_eq)
+    m = _series_metrics(equity, rf)
+    bm = _series_metrics(bench_eq, rf)
+
+    # Out-of-sample validation: train on the first `train_frac`, report the
+    # untouched holdout separately. If the edge only exists in-sample, the
+    # holdout row will expose it.
+    split_idx = max(1, int(len(equity) * bt.train_frac))
+    split_date = equity.index[min(split_idx, len(equity) - 1)]
+    tr_train = [t for t in trades if pd.Timestamp(t.entry_date) < split_date]
+    tr_hold = [t for t in trades if pd.Timestamp(t.entry_date) >= split_date]
+    validation = {
+        "train_frac": bt.train_frac,
+        "split_date": str(split_date.date()),
+        "train": _window(equity.iloc[:split_idx + 1], bench_eq.iloc[:split_idx + 1], tr_train, rf),
+        "holdout": _window(equity.iloc[split_idx:], bench_eq.iloc[split_idx:], tr_hold, rf),
+    }
 
     # Trade statistics.
     rets = [t.return_pct for t in trades]
@@ -338,6 +422,12 @@ def _assemble(universe, prepared, calendar, warmup, eq_dates, eq_vals,
     def f(x, nd=4):
         return None if (x is None or (isinstance(x, float) and math.isnan(x))) else round(float(x), nd)
 
+    def clean(d):  # round floats, NaN -> None, leave strings/ints
+        return {k: (f(v, 2) if isinstance(v, float) else v) for k, v in d.items()}
+
+    for key in ("train", "holdout"):
+        validation[key] = clean(validation[key])
+
     return {
         "meta": {
             "period": bt.history_period, "benchmark": bt.benchmark,
@@ -348,6 +438,7 @@ def _assemble(universe, prepared, calendar, warmup, eq_dates, eq_vals,
             "entry_slippage": bt.entry_slippage, "exit_slippage": bt.exit_slippage,
             "commission": bt.commission, "trail_ma_len": bt.trail_ma_len,
             "cash_yield_annual": bt.cash_yield_annual,
+            "risk_free_annual": bt.risk_free_annual,
             "filters": {
                 "breakout_volume": bt.use_breakout_volume and bt.breakout_vol_mult,
                 "rs_ranking": bt.use_rs_ranking,
@@ -376,6 +467,7 @@ def _assemble(universe, prepared, calendar, warmup, eq_dates, eq_vals,
             "strategy": [f(v) for v in yr_strat.tolist()],
             "bench": [f(v) for v in yr_bench.tolist()],
         },
+        "validation": validation,
         "r_multiples": [t.r_multiple for t in trades if t.r_multiple is not None],
         "trades": [vars(t) | {"entry_date": str(t.entry_date.date()),
                               "exit_date": str(t.exit_date.date())} for t in trades],

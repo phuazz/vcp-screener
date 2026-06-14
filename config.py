@@ -160,6 +160,17 @@ class BacktestConfig:
     # realism correction, not a return-flattering tuning knob.
     cash_yield_annual: float = 0.02
 
+    # Risk-free rate used for excess-return Sharpe/Sortino. Set equal to the
+    # cash yield so the risk-free return earned on idle cash is not double-
+    # counted as alpha in the risk-adjusted ratios.
+    risk_free_annual: float = 0.02
+
+    # Out-of-sample validation: the first `train_frac` of the equity history is
+    # the in-sample window, the remainder is the untouched holdout. Metrics are
+    # reported for train, holdout, and full so we can see whether the edge
+    # survives out of sample rather than only on the period we eyeballed.
+    train_frac: float = 0.60
+
     # Risk-based position sizing: each trade risks this fraction of current
     # equity between entry and the initial stop. Notional is capped so a very
     # tight stop cannot produce an oversized position.

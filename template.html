@@ -125,8 +125,17 @@
   <div class="kpis" id="bt-kpis"></div>
   <div class="section-sub" style="margin-top:10px;">The strategy is a <strong>risk-controlled sleeve</strong>:
     each trade risks a fixed fraction of equity, capital sits in cash when no setup qualifies, and idle cash earns a
-    conservative money-market yield. Compare it to the Russell 1000 (IWB) on <strong>risk-adjusted</strong> terms
-    (Sharpe, drawdown), not raw return &mdash; its low average exposure caps absolute CAGR by design.</div>
+    conservative money-market yield. Sharpe and Sortino are computed <strong>in excess of the risk-free rate</strong>
+    (so the cash yield is not counted as alpha). Compare it to the Russell 1000 (IWB) on <strong>risk-adjusted</strong>
+    terms, not raw return &mdash; its low average exposure caps absolute CAGR by design.</div>
+
+  <h3>Out-of-sample validation</h3>
+  <div class="section-sub">The headline numbers above are computed over the full period <em>we examined while
+    choosing the rules</em>, so they are in-sample. The honest test is whether the edge survives on data we did not
+    look at: the history is split into an in-sample <strong>train</strong> window and an untouched
+    <strong>holdout</strong>. If the train and holdout rows are broadly consistent, the edge is more likely real; if
+    the holdout collapses, the full-period figure was curve-fitting.</div>
+  <div id="validation"></div>
 
   <h3>Equity curve vs Russell 1000</h3>
   <div class="section-sub">Growth of the initial stake, strategy versus a fully-invested Russell 1000 (IWB)
@@ -277,6 +286,8 @@ function renderBacktest(b){
   document.getElementById("bt-kpis").innerHTML = K.map(([l,v,c,cls])=>
     `<div class="kpi"><div class="v ${cls}">${v}</div><div class="l">${l}</div>${c?`<div class="cmp">${c}</div>`:""}</div>`).join("");
 
+  renderValidation(b.validation, BM);
+
   // Equity curve (log)
   Plotly.newPlot('equity-chart', [
     {x:b.equity.dates, y:b.equity.strategy, name:'VCP strategy', mode:'lines', line:{color:'#1351b4', width:2}},
@@ -303,6 +314,20 @@ function renderBacktest(b){
 
   renderExample(b.example);
   renderTrades(b.trades);
+}
+
+function renderValidation(v, BM){
+  const el=document.getElementById('validation');
+  if(!v||!v.train){ el.innerHTML=''; return; }
+  const row=(label,w)=>`<tr><td class="l tick">${label}</td><td>${w.start} → ${w.end}</td>
+    <td class="${(w.cagr||0)>0?'pos':'neg'}">${pf(w.cagr)}</td><td>${nf(w.sharpe,2)}</td>
+    <td>${pf(w.max_dd)}</td><td>${w.num_trades}</td>
+    <td class="${(w.profit_factor||0)>1?'pos':'neg'}">${nf(w.profit_factor,2)}</td>
+    <td class="${(w.expectancy_r||0)>0?'pos':'neg'}">${nf(w.expectancy_r,2)}R</td>
+    <td>${pf(w.bench_cagr)}</td></tr>`;
+  el.innerHTML=`<table><thead><tr><th class="l">Window</th><th>Period</th><th>CAGR</th><th>Sharpe</th>
+    <th>Max DD</th><th>Trades</th><th>PF</th><th>Expectancy</th><th>${BM} CAGR</th></tr></thead>
+    <tbody>${row('Train (in-sample)',v.train)}${row('Holdout (out-of-sample)',v.holdout)}</tbody></table>`;
 }
 
 function renderExample(ex){
