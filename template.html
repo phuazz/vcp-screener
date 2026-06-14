@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VCP Screener</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --panel: #fbfbfa;
+    --ink: #1b1f24;
+    --muted: #5b6470;
+    --line: #e4e7ec;
+    --green: #1f7a4d;
+    --green-bg: #eef7f1;
+    --amber: #9a6a00;
+    --amber-bg: #fbf4e6;
+    --accent: #2451b3;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+    font-size: 15px;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 18px; margin-bottom: 24px; }
+  h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 14px; }
+  .updated { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0 28px; }
+  .chip {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 14px; min-width: 110px;
+  }
+  .chip .n { font-size: 22px; font-weight: 600; }
+  .chip .l { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  h2 { font-size: 16px; margin: 28px 0 12px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .dot.green { background: var(--green); }
+  .dot.amber { background: var(--amber); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  thead th {
+    text-align: right; font-weight: 600; color: var(--muted); font-size: 12px;
+    text-transform: uppercase; letter-spacing: 0.03em; padding: 8px 10px;
+    border-bottom: 1px solid var(--line); white-space: nowrap;
+  }
+  thead th.l, tbody td.l { text-align: left; }
+  tbody td { text-align: right; padding: 9px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  tbody tr:hover { background: var(--panel); }
+  .tick { font-weight: 600; }
+  .mono { font-variant-numeric: tabular-nums; }
+  .tags { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+  .tag {
+    background: var(--amber-bg); color: var(--amber); border-radius: 5px;
+    padding: 1px 7px; font-size: 11px; white-space: nowrap;
+  }
+  .empty { color: var(--muted); background: var(--panel); border: 1px dashed var(--line);
+    border-radius: 8px; padding: 18px; font-size: 14px; }
+  .note { margin-top: 36px; padding-top: 18px; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 12.5px; line-height: 1.6; }
+  .note strong { color: var(--ink); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>VCP Screener</h1>
+    <div class="sub">Minervini-style Volatility Contraction Pattern, gated by the Trend Template. Personal research signal.</div>
+    <div class="updated" id="updated"></div>
+  </header>
+
+  <div class="chips" id="chips"></div>
+
+  <h2><span class="dot green"></span> Confirmed VCP candidates</h2>
+  <div id="candidates"></div>
+
+  <h2><span class="dot amber"></span> Watchlist — cleared the Trend Template, not yet a clean base</h2>
+  <div id="watchlist"></div>
+
+  <div class="note">
+    <strong>How to read this.</strong> Candidates have passed the eight Trend Template
+    conditions, an RS-rank floor, a liquidity floor, and the full VCP test (tightening
+    contractions, dry volume, a tight final contraction). The pivot is the breakout line;
+    the stop sits below the last contraction low; risk is the pivot-to-stop distance. The
+    watchlist holds names in confirmed uptrends whose base is not yet clean — the tags show
+    what is missing.<br><br>
+    <strong>Caveats.</strong> Prototype data is from yfinance (no delisted history, best
+    for liquid large caps) over a curated Russell 1000 seed, not the full index. This is a
+    research signal, not investment advice, and not a recommendation to trade any security.
+    Method and limitations:
+    <a href="https://github.com/phuazz/vcp-screener">github.com/phuazz/vcp-screener</a>.
+  </div>
+</div>
+
+<script>
+/* Data is injected here by scripts/pipeline.py as window.SCREEN_DATA.
+   For standalone local dev the page falls back to fetching data/candidates.json. */
+const INJECTED = "__SCREEN_DATA__";
+
+function fmt(n, d = 2) {
+  if (n === null || n === undefined || Number.isNaN(n)) return "&mdash;";
+  return Number(n).toLocaleString("en-GB", { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+function contractions(arr) {
+  if (!arr || !arr.length) return "&mdash;";
+  return arr.map(d => Math.round(d * 100)).join(" → ") + "%";
+}
+
+function renderChips(d) {
+  const chips = [
+    ["Universe", d.universe_size],
+    ["Fetched", d.fetched],
+    ["Candidates", d.num_candidates],
+    ["Watchlist", d.num_watchlist ?? (d.watchlist ? d.watchlist.length : 0)],
+  ];
+  document.getElementById("chips").innerHTML = chips.map(
+    ([l, n]) => `<div class="chip"><div class="n mono">${n}</div><div class="l">${l}</div></div>`
+  ).join("");
+}
+
+function renderCandidates(rows) {
+  const el = document.getElementById("candidates");
+  if (!rows || !rows.length) {
+    el.innerHTML = `<div class="empty">No confirmed VCP candidates in the current screen.
+      A VCP screen routinely returns none in a soft or corrective tape &mdash; that is the
+      gate doing its job, not a failure.</div>`;
+    return;
+  }
+  const head = ["Ticker","Close","Pivot","% to pivot","Stop","Risk %","RS","Contractions","ADV $m"];
+  el.innerHTML = `<table><thead><tr>
+    <th class="l">${head[0]}</th>${head.slice(1).map(h => `<th>${h}</th>`).join("")}
+    </tr></thead><tbody>${rows.map(r => `<tr>
+      <td class="l tick">${r.ticker}</td>
+      <td class="mono">${fmt(r.close)}</td>
+      <td class="mono">${fmt(r.pivot)}</td>
+      <td class="mono">${fmt(r.pct_to_pivot, 1)}</td>
+      <td class="mono">${fmt(r.stop)}</td>
+      <td class="mono">${fmt(r.risk_pct, 1)}</td>
+      <td class="mono">${fmt(r.rs_rank, 0)}</td>
+      <td class="mono">${contractions(r.contractions)}</td>
+      <td class="mono">${fmt(r.adv_usd_m, 1)}</td>
+    </tr>`).join("")}</tbody></table>`;
+}
+
+function renderWatchlist(rows) {
+  const el = document.getElementById("watchlist");
+  if (!rows || !rows.length) {
+    el.innerHTML = `<div class="empty">No names cleared the Trend Template gate in the
+      current screen.</div>`;
+    return;
+  }
+  const head = ["Ticker","Close","RS","Contractions","Final range %","Vol ratio","Missing"];
+  el.innerHTML = `<table><thead><tr>
+    <th class="l">${head[0]}</th>${head.slice(1, -1).map(h => `<th>${h}</th>`).join("")}
+    <th>${head[head.length-1]}</th>
+    </tr></thead><tbody>${rows.map(r => `<tr>
+      <td class="l tick">${r.ticker}</td>
+      <td class="mono">${fmt(r.close)}</td>
+      <td class="mono">${fmt(r.rs_rank, 0)}</td>
+      <td class="mono">${contractions(r.contractions)}</td>
+      <td class="mono">${fmt(r.final_range_pct, 1)}</td>
+      <td class="mono">${fmt(r.recent_vol_ratio, 2)}</td>
+      <td><div class="tags">${(r.missing || []).map(m => `<span class="tag">${m}</span>`).join("")}</div></td>
+    </tr>`).join("")}</tbody></table>`;
+}
+
+function render(d) {
+  const dt = d.generated_at ? new Date(d.generated_at) : null;
+  document.getElementById("updated").textContent = dt
+    ? "Last screen: " + dt.toUTCString().replace("GMT", "UTC")
+    : "";
+  renderChips(d);
+  renderCandidates(d.candidates);
+  renderWatchlist(d.watchlist);
+}
+
+(function () {
+  if (INJECTED && INJECTED[0] === "{") {       // pipeline injected real JSON
+    try { render(JSON.parse(INJECTED)); return; } catch (e) { /* fall through */ }
+  }
+  fetch("data/candidates.json")                 // standalone dev fallback
+    .then(r => r.json()).then(render)
+    .catch(() => { document.getElementById("candidates").innerHTML =
+      `<div class="empty">No data. Run <code>python run_screen.py</code> then
+       <code>python scripts/pipeline.py</code>.</div>`; });
+})();
+</script>
+</body>
+</html>

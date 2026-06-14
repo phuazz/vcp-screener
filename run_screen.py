@@ -64,6 +64,7 @@ def run(use_cache: bool = True, show_all: bool = False) -> dict:
 
     # Pass 2: apply the full gate, then VCP analysis on survivors.
     candidates = []
+    watchlist = []      # cleared the Trend Template gate but missed the VCP test
     diagnostics = []
 
     for t, df in data.items():
@@ -85,6 +86,19 @@ def run(use_cache: bool = True, show_all: bool = False) -> dict:
         vcp = analyse_vcp(df)
         if not vcp.is_vcp:
             diagnostics.append((t, "VCP", vcp.reasons))
+            last = df.iloc[-1]
+            watchlist.append({
+                "ticker": t,
+                "close": round(float(last["Close"]), 2),
+                "rs_rank": round(rank, 1),
+                "num_contractions": vcp.num_contractions,
+                "contractions": vcp.contractions,
+                "final_range_pct": (round(vcp.final_range_pct * 100, 2)
+                                    if vcp.final_range_pct == vcp.final_range_pct else None),
+                "recent_vol_ratio": (round(vcp.recent_vol_ratio, 2)
+                                     if vcp.recent_vol_ratio == vcp.recent_vol_ratio else None),
+                "missing": vcp.reasons,
+            })
             continue
 
         last = df.iloc[-1]
@@ -105,13 +119,17 @@ def run(use_cache: bool = True, show_all: bool = False) -> dict:
         })
 
     candidates.sort(key=lambda c: c["rs_rank"], reverse=True)
+    # Watchlist sorted by how close to a base: more contractions first, then RS.
+    watchlist.sort(key=lambda w: (w["num_contractions"], w["rs_rank"]), reverse=True)
 
     result = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "universe_size": len(universe),
         "fetched": len(data),
         "num_candidates": len(candidates),
+        "num_watchlist": len(watchlist),
         "candidates": candidates,
+        "watchlist": watchlist,
     }
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
