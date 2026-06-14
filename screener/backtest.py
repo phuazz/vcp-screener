@@ -86,6 +86,10 @@ def _prepare(df: pd.DataFrame, bench_close: pd.Series) -> pd.DataFrame:
 
     df = df.copy()
     df["ma_trail"] = c.rolling(bt.trail_ma_len).mean()
+    df["avg_vol"] = df["Volume"].rolling(50).mean()
+    # Continuous relative-strength score (name minus benchmark trailing return)
+    # used to rank competing breakouts on the same bar.
+    df["rs_score"] = (name_ret - bench_ret)
     df["setup_ok"] = (trend_ok & rs_ok).fillna(False)
     return df
 
@@ -119,6 +123,10 @@ def run_backtest(universe: list[str]) -> dict:
     bench_close = bench_raw["Close"]
     calendar = bench_raw.index
 
+    # Market-regime series: benchmark above its regime moving average.
+    regime_ma = bench_close.rolling(bt.regime_ma_len).mean()
+    regime_ok = (bench_close > regime_ma).reindex(calendar).fillna(False).to_numpy()
+
     # Bulk-fetch the universe (threaded, cached), then prepare each name
     # aligned to the benchmark calendar.
     raw_data = fetch_bulk(universe, bt.history_period)
@@ -135,6 +143,8 @@ def run_backtest(universe: list[str]) -> dict:
         arrs[t] = {
             "o": d["Open"].to_numpy(), "h": d["High"].to_numpy(),
             "l": d["Low"].to_numpy(), "c": d["Close"].to_numpy(),
+            "v": d["Volume"].to_numpy(), "avgv": d["avg_vol"].to_numpy(),
+            "rs": d["rs_score"].to_numpy(),
             "trail": d["ma_trail"].to_numpy(), "setup": d["setup_ok"].to_numpy(),
             "df": d,
         }
@@ -186,8 +196,12 @@ def run_backtest(universe: list[str]) -> dict:
                 del positions[t]
 
         # ---- 2. Entries from armed breakouts --------------------------------
+        # Collect this bar's breakouts, apply the regime and breakout-volume
+        # gates, then fill the open slots best-first by relative strength.
         equity_now = cash + sum(positions[t]["shares"] * arrs[t]["c"][i]
                                 for t in positions if not np.isnan(arrs[t]["c"][i]))
+        market_ok = regime_ok[i] or not bt.use_regime_filter
+        triggered = []
         for t in list(pending.keys()):
             if t in positions:
                 pending.pop(t, None)
@@ -195,31 +209,47 @@ def run_backtest(universe: list[str]) -> dict:
             p = pending[t]
             p["bars_left"] -= 1
             a = arrs[t]
-            hi, op = a["h"][i], a["o"][i]
-            if not np.isnan(hi) and hi >= p["pivot"] and len(positions) < bt.max_positions:
-                gross = max(p["pivot"], op) if not np.isnan(op) else p["pivot"]
-                entry_net = gross * (1 + bt.entry_slippage + bt.commission)
-                risk_cap = bt.risk_per_trade * equity_now
-                per_share_risk = gross - p["stop"]
-                if per_share_risk <= 0:
-                    pending.pop(t, None)
+            hi = a["h"][i]
+            broke_out = not np.isnan(hi) and hi >= p["pivot"]
+            if broke_out and market_ok:
+                vol_ok = (not bt.use_breakout_volume) or (
+                    not np.isnan(a["avgv"][i]) and a["v"][i] >= bt.breakout_vol_mult * a["avgv"][i])
+                if vol_ok:
+                    rs = a["rs"][i]
+                    triggered.append((rs if rs == rs else -1e9, t, p))
                     continue
-                shares = int(risk_cap / per_share_risk)
-                shares = min(shares, int(bt.max_position_pct * equity_now / entry_net))
-                shares = min(shares, int(cash / entry_net))
-                if shares > 0:
-                    cash -= shares * entry_net
-                    positions[t] = {
-                        "shares": shares, "entry_gross": gross, "entry_net": entry_net,
-                        "stop": p["stop"], "stop0": p["stop"], "entry_date": calendar[i],
-                        "entry_i": i,
-                    }
-                pending.pop(t, None)
-            elif p["bars_left"] <= 0:
+            if p["bars_left"] <= 0:
                 pending.pop(t, None)
 
+        if bt.use_rs_ranking:
+            triggered.sort(key=lambda x: x[0], reverse=True)
+        for _rs, t, p in triggered:
+            if len(positions) >= bt.max_positions:
+                pending.pop(t, None)        # missed this window; do not carry stale
+                continue
+            a = arrs[t]
+            op = a["o"][i]
+            gross = max(p["pivot"], op) if not np.isnan(op) else p["pivot"]
+            entry_net = gross * (1 + bt.entry_slippage + bt.commission)
+            per_share_risk = gross - p["stop"]
+            if per_share_risk <= 0:
+                pending.pop(t, None)
+                continue
+            shares = int(bt.risk_per_trade * equity_now / per_share_risk)
+            shares = min(shares, int(bt.max_position_pct * equity_now / entry_net))
+            shares = min(shares, int(cash / entry_net))
+            if shares > 0:
+                cash -= shares * entry_net
+                positions[t] = {
+                    "shares": shares, "entry_gross": gross, "entry_net": entry_net,
+                    "stop": p["stop"], "stop0": p["stop"], "entry_date": calendar[i],
+                    "entry_i": i,
+                }
+            pending.pop(t, None)
+
         # ---- 3. Detection: arm pending breakouts for flat names -------------
-        for t, a in arrs.items():
+        # Skip entirely in market downtrends (no new entries would be taken).
+        for t, a in (arrs.items() if market_ok else ()):
             if t in positions or t in pending:
                 continue
             if not a["setup"][i]:
@@ -318,6 +348,11 @@ def _assemble(universe, prepared, calendar, warmup, eq_dates, eq_vals,
             "entry_slippage": bt.entry_slippage, "exit_slippage": bt.exit_slippage,
             "commission": bt.commission, "trail_ma_len": bt.trail_ma_len,
             "cash_yield_annual": bt.cash_yield_annual,
+            "filters": {
+                "breakout_volume": bt.use_breakout_volume and bt.breakout_vol_mult,
+                "rs_ranking": bt.use_rs_ranking,
+                "regime_filter": bt.use_regime_filter and bt.regime_ma_len,
+            },
         },
         "kpis": {
             "cagr": f(m["cagr"]), "total_return": f(m["total_return"]),

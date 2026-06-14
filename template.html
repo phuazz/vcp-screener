@@ -246,10 +246,17 @@ function renderBacktest(b){
   document.getElementById("bt-window").innerHTML =
     `Window <strong>${m.start} → ${m.end}</strong>, ${m.names_traded} names, ${k.num_trades} trades,
      ${nf(m.initial_equity,0)} starting equity.`;
+  const flt = m.filters || {};
+  const fltText = [
+    flt.breakout_volume ? `breakout volume &ge;${flt.breakout_volume}&times;` : null,
+    flt.rs_ranking ? `RS-ranked entries` : null,
+    flt.regime_filter ? `regime gate (${BM}&gt;${flt.regime_filter}-day)` : null,
+  ].filter(Boolean).join(", ") || "none";
   document.getElementById("params").innerHTML =
     `Parameters this run: risk ${pf(m.risk_per_trade,2)} per trade, max ${m.max_positions} positions,
      entry slippage ${(m.entry_slippage*1e4).toFixed(0)}bps, exit ${(m.exit_slippage*1e4).toFixed(0)}bps,
-     commission ${(m.commission*1e4).toFixed(0)}bps/side, trail ${m.trail_ma_len}-day, cash yield ${pf(m.cash_yield_annual,1)}.`;
+     commission ${(m.commission*1e4).toFixed(0)}bps/side, trail ${m.trail_ma_len}-day, cash yield ${pf(m.cash_yield_annual,1)}.
+     <strong>Quality filters:</strong> ${fltText}.`;
 
   const K=[
     ["CAGR", pf(k.cagr), BM+" "+pf(k.bench_cagr), sign(k.cagr)],

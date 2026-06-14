@@ -191,6 +191,27 @@ class BacktestConfig:
     # look-ahead-free RS proxy that avoids needing the full cross-section.
     rs_lookback: int = 126
 
+    # --- Quality filters (industry-standard; each independently toggleable so
+    # the contribution of each can be measured by ablation) ---
+
+    # 1. Breakout-volume confirmation. A breakout must occur on volume at least
+    #    this multiple of the 50-day average; a low-volume breakout is a failed
+    #    signal and is not taken. Core Minervini.
+    use_breakout_volume: bool = True
+    breakout_vol_mult: float = 1.5
+
+    # 2. RS-rank selection. When more breakouts trigger on one bar than there
+    #    are open slots, take the strongest names by relative strength rather
+    #    than arbitrary order. Leadership focus.
+    use_rs_ranking: bool = True
+
+    # 3. Market-regime gate. Take new entries only when the benchmark itself is
+    #    in an uptrend (close above its regime moving average). O'Neil/Minervini
+    #    sit out market downtrends. Existing positions are still managed by
+    #    their own stops; only new entries are gated.
+    use_regime_filter: bool = True
+    regime_ma_len: int = 200
+
 
 @dataclass(frozen=True)
 class Config:
