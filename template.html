@@ -260,8 +260,9 @@ function renderBacktest(b){
   const flt = m.filters || {};
   const fltText = [
     flt.breakout_volume ? `breakout volume &ge;${flt.breakout_volume}&times;` : null,
-    flt.rs_ranking ? `RS-ranked entries` : null,
+    flt.composite_ranking ? `composite-ranked entries` : (flt.rs_ranking ? `RS-ranked entries` : null),
     flt.regime_filter ? `regime gate (${BM}&gt;${flt.regime_filter}-day)` : null,
+    flt.extension_rules ? `extension (${flt.extension_rules} of 20-day)` : null,
   ].filter(Boolean).join(", ") || "none";
   document.getElementById("params").innerHTML =
     `Parameters this run: risk ${pf(m.risk_per_trade,2)} per trade, max ${m.max_positions} positions,

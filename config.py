@@ -229,6 +229,28 @@ class BacktestConfig:
     use_regime_filter: bool = True
     regime_ma_len: int = 200
 
+    # --- Price-only refinements (inspired by the Minervini Markets 360 status
+    # bar: a quantified VCP-tightness score, and a distance-from-20-day metric
+    # used to avoid chasing and to sell into strength) ---
+
+    # 4. Composite setup-quality ranking. When breakouts compete for slots, rank
+    #    by a blend of relative strength, base tightness (tighter is better), and
+    #    volume dryness (drier is better) rather than RS alone. KEPT: a modest but
+    #    consistent improvement that also holds out of sample (PF 2.80 -> 3.06,
+    #    holdout Sharpe 0.95 -> 1.01). Mirrors his quantified VCP-tightness score.
+    use_composite_ranking: bool = True
+
+    # 5. Extension rules. REJECTED by ablation. Skipping entries extended above
+    #    the 20-day and trimming into strength mechanically rejects the explosive
+    #    gap-and-go breakouts that ARE the edge (PF collapsed 2.80 -> 1.32, CAGR
+    #    8.2% -> 1.8%). His +/-20dma metric works on a discretionary intraday SEPA
+    #    entry; it does not transfer to a mechanical breakout fill. Left off.
+    use_extension_rules: bool = False
+    ext_ma_len: int = 20
+    max_entry_extension: float = 0.10    # skip entries >10% above the 20-day
+    profit_extension: float = 0.25       # trim when >25% above the 20-day
+    trim_fraction: float = 0.50          # fraction of the position sold into strength
+
 
 @dataclass(frozen=True)
 class Config:

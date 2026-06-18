@@ -98,6 +98,7 @@ def _prepare(df: pd.DataFrame, bench_close: pd.Series) -> pd.DataFrame:
     df = df.copy()
     df["ma_trail"] = c.rolling(bt.trail_ma_len).mean()
     df["avg_vol"] = df["Volume"].rolling(50).mean()
+    df["ext"] = c / c.rolling(bt.ext_ma_len).mean() - 1.0   # distance above 20-day
     df["rs_score"] = rs_score
     # Partial gate: trend template AND liquidity. The RS-rank condition is
     # added cross-sectionally in run_backtest.
@@ -122,6 +123,34 @@ class Trade:
     r_multiple: float
     bars: int
     reason: str
+
+
+def _rank_triggered(triggered: list[dict], bt) -> None:
+    """Order competing breakouts best-first, in place.
+
+    Composite ranking blends three signals by rank-sum: relative strength
+    (higher better), base tightness (lower final range better), and volume
+    dryness (lower ratio better). Falls back to plain RS, then insertion order.
+    """
+    if len(triggered) <= 1:
+        return
+    if bt.use_composite_ranking:
+        def ranks(key, better_low):
+            worst = float("inf") if better_low else float("-inf")
+            vals = [(x[key] if x[key] is not None and x[key] == x[key] else worst) for x in triggered]
+            order = sorted(range(len(vals)), key=lambda i: vals[i], reverse=not better_low)
+            out = [0] * len(vals)
+            for pos, i in enumerate(order):
+                out[i] = pos
+            return out
+        r_rs = ranks("rs", better_low=False)
+        r_tt = ranks("tight", better_low=True)
+        r_dd = ranks("dry", better_low=True)
+        for i, x in enumerate(triggered):
+            x["score"] = r_rs[i] + r_tt[i] + r_dd[i]
+        triggered.sort(key=lambda x: x["score"])
+    elif bt.use_rs_ranking:
+        triggered.sort(key=lambda x: x["rs"], reverse=True)
 
 
 def run_backtest(universe: list[str]) -> dict:
@@ -162,7 +191,7 @@ def run_backtest(universe: list[str]) -> dict:
             "o": d["Open"].to_numpy(), "h": d["High"].to_numpy(),
             "l": d["Low"].to_numpy(), "c": d["Close"].to_numpy(),
             "v": d["Volume"].to_numpy(), "avgv": d["avg_vol"].to_numpy(),
-            "rs": d["rs_score"].to_numpy(),
+            "rs": d["rs_score"].to_numpy(), "ext": d["ext"].to_numpy(),
             "trail": d["ma_trail"].to_numpy(), "setup": setup,
             "df": d,
         }
@@ -193,6 +222,27 @@ def run_backtest(universe: list[str]) -> dict:
                 continue
             pos = positions[t]
             bars_held = i - pos["entry_i"]
+
+            # Trim into strength once: sell a fraction when the position becomes
+            # climactically extended above its 20-day. The remainder runs on.
+            if (bt.use_extension_rules and not pos.get("trimmed")
+                    and bars_held >= bt.exit_grace_bars and pos["shares"] > 1):
+                ext = a["ext"][i]
+                if not np.isnan(ext) and ext >= bt.profit_extension:
+                    trim_sh = int(pos["shares"] * bt.trim_fraction)
+                    if trim_sh > 0:
+                        proceeds = cl * (1 - bt.exit_slippage - bt.commission)
+                        cash += trim_sh * proceeds
+                        r = ((cl - pos["entry_gross"]) / (pos["entry_gross"] - pos["stop0"])
+                             if pos["entry_gross"] > pos["stop0"] else float("nan"))
+                        trades.append(Trade(
+                            ticker=t, entry_date=pos["entry_date"], entry=round(pos["entry_gross"], 2),
+                            stop0=round(pos["stop0"], 2), exit_date=calendar[i], exit=round(cl, 2),
+                            shares=trim_sh, return_pct=round((proceeds / pos["entry_net"] - 1.0) * 100, 2),
+                            r_multiple=round(r, 2) if r == r else None, bars=bars_held, reason="trim"))
+                        pos["shares"] -= trim_sh
+                        pos["trimmed"] = True
+
             exit_price = None
             reason = None
             if not np.isnan(lo) and lo <= pos["stop"]:
@@ -218,8 +268,8 @@ def run_backtest(universe: list[str]) -> dict:
                 del positions[t]
 
         # ---- 2. Entries from armed breakouts --------------------------------
-        # Collect this bar's breakouts, apply the regime and breakout-volume
-        # gates, then fill the open slots best-first by relative strength.
+        # Collect this bar's breakouts, apply the regime / volume / extension
+        # gates, then fill the open slots best-first by setup quality.
         equity_now = cash + sum(p["shares"] * p["last_close"] for p in positions.values())
         market_ok = regime_ok[i] or not bt.use_regime_filter
         triggered = []
@@ -235,16 +285,22 @@ def run_backtest(universe: list[str]) -> dict:
             if broke_out and market_ok:
                 vol_ok = (not bt.use_breakout_volume) or (
                     not np.isnan(a["avgv"][i]) and a["v"][i] >= bt.breakout_vol_mult * a["avgv"][i])
-                if vol_ok:
+                ext = a["ext"][i]
+                ext_ok = (not bt.use_extension_rules) or np.isnan(ext) or ext <= bt.max_entry_extension
+                if vol_ok and ext_ok:
                     rs = a["rs"][i]
-                    triggered.append((rs if rs == rs else -1e9, t, p))
+                    triggered.append({"t": t, "p": p, "rs": rs if rs == rs else -1e9,
+                                      "tight": p.get("tight"), "dry": p.get("dry")})
+                    continue
+                if not ext_ok:           # too extended to chase; drop the setup
+                    pending.pop(t, None)
                     continue
             if p["bars_left"] <= 0:
                 pending.pop(t, None)
 
-        if bt.use_rs_ranking:
-            triggered.sort(key=lambda x: x[0], reverse=True)
-        for _rs, t, p in triggered:
+        _rank_triggered(triggered, bt)
+        for x in triggered:
+            t, p = x["t"], x["p"]
             if len(positions) >= bt.max_positions:
                 pending.pop(t, None)        # missed this window; do not carry stale
                 continue
@@ -285,7 +341,8 @@ def run_backtest(universe: list[str]) -> dict:
             pivot, stop = res.pivot, res.stop
             if not (pivot > cl and pivot <= cl * (1 + bt.max_pivot_distance) and stop < pivot):
                 continue
-            pending[t] = {"pivot": pivot, "stop": stop, "bars_left": bt.setup_expiry_bars}
+            pending[t] = {"pivot": pivot, "stop": stop, "bars_left": bt.setup_expiry_bars,
+                          "tight": res.final_range_pct, "dry": res.recent_vol_ratio}
 
         # ---- 4. Mark to market (carry-forward valuation, no vanishing) ------
         mv = sum(p["shares"] * p["last_close"] for p in positions.values())
@@ -443,6 +500,10 @@ def _assemble(universe, prepared, calendar, warmup, eq_dates, eq_vals,
                 "breakout_volume": bt.use_breakout_volume and bt.breakout_vol_mult,
                 "rs_ranking": bt.use_rs_ranking,
                 "regime_filter": bt.use_regime_filter and bt.regime_ma_len,
+                "composite_ranking": bt.use_composite_ranking,
+                "extension_rules": (bt.use_extension_rules
+                                    and f"skip>{int(bt.max_entry_extension*100)}%, trim {int(bt.trim_fraction*100)}%>"
+                                        f"{int(bt.profit_extension*100)}%"),
             },
         },
         "kpis": {

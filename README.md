@@ -123,6 +123,13 @@ tested and the data was allowed to overturn the hypothesis at each step:
    doubled drawdown (-19% -> -37%) for no extra return and a lower Sharpe
    (0.43 -> 0.38). Variance drag cancels the benefit; the conservative 0.75%/8
    settings are strictly better. Reverted.
+7. *Price-only refinements (from the Minervini Markets 360 status bar), ablated.*
+   Composite setup-quality ranking (RS + tightness + dryness) is a genuine, modest
+   improvement that holds out of sample (PF 2.80 -> 3.06, holdout Sharpe 0.95 ->
+   1.01) — KEPT. The extension rules (skip extended entries, trim into strength)
+   were catastrophic (PF -> 1.32) because they mechanically reject the explosive
+   gap-and-go breakouts that are the edge — his +/-20dma metric needs a
+   discretionary intraday entry to work — REJECTED.
 
 **Conclusion.** VCP-the-pattern is timing, not alpha. Built and audited properly
 the mechanical system is a real low-drawdown sleeve with a genuine trade-level
